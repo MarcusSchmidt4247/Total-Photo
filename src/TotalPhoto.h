@@ -5,16 +5,24 @@
 #define TOTAL_PHOTO
 
 #include <wx/app.h>
+#include <wx/frame.h>
+#include <wx/event.h>
 #include <string>
 
 class TotalPhoto : public wxApp
 {
-	public:
+public:
 	virtual bool OnInit();
 	// virtual int OnExit(); // (OnExit() -> wxWidgets cleans structures -> class destructor)
 
-	private:
+private:
+	DECLARE_EVENT_TABLE();
+	void OnNew(wxCommandEvent &event);
+
+	bool CreateNew();
 	std::string GetDirectory();
+
+	wxFrame *root;
 };
 
 wxIMPLEMENT_APP(TotalPhoto);

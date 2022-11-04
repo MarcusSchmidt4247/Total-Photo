@@ -12,14 +12,23 @@
 ImageViewer::ImageViewer(wxWindow *parent, wxWindowID id, const wxString &title, std::string path)
 			: wxFrame(parent, id, title)
 {
-	// Set menu bar
-	wxMenu *menu = new wxMenu();
-	menu->Append(wxID_NEW, "New");
-	wxMenuBar *menuBar = new wxMenuBar();
-	menuBar->Append(menu, "Image Viewer");
-	this->SetMenuBar(menuBar);
-
 	this->path = path;
+
+	// Sub-menu with radio options to choose one sorting method
+	wxMenu *sortMenu = new wxMenu();
+	sortMenu->Append(ID_SORT_NAME, "Name", wxEmptyString, wxITEM_RADIO);
+	sortMenu->Append(ID_SORT_DATE, "Date Created", wxEmptyString, wxITEM_RADIO);
+	sortMenu->Append(ID_SORT_RANDOM, "Random", wxEmptyString, wxITEM_RADIO);
+
+	// Top-level menu with sorting options and to open new viewer
+	wxMenu *viewerMenu = new wxMenu();
+	viewerMenu->AppendSubMenu(sortMenu, "Sort By");
+	viewerMenu->Append(wxID_NEW, "New");
+
+	// Create menu bar
+	wxMenuBar *menuBar = new wxMenuBar();
+	menuBar->Append(viewerMenu, "Image Viewer");
+	this->SetMenuBar(menuBar);
 
 	wxBoxSizer *topSizer = new wxBoxSizer(wxHORIZONTAL);
 
@@ -42,3 +51,19 @@ ImageViewer::ImageViewer(wxWindow *parent, wxWindowID id, const wxString &title,
 	topSizer->Add(directoryPanel, wxSizerFlags());
 	SetSizer(topSizer);
 }
+
+void ImageViewer::OnSortChanged(wxCommandEvent &event)
+{
+	sortMethod = event.GetId();
+
+	//********************************************************************
+	// To-do: Resort the list of images according to the new sort method *
+	//********************************************************************
+}
+
+// Don't catch wxID_NEW because the event will rise to TotalPhoto.cpp
+BEGIN_EVENT_TABLE(ImageViewer, wxFrame)
+EVT_MENU(ID_SORT_NAME, ImageViewer::OnSortChanged)
+EVT_MENU(ID_SORT_DATE, ImageViewer::OnSortChanged)
+EVT_MENU(ID_SORT_RANDOM, ImageViewer::OnSortChanged)
+END_EVENT_TABLE()

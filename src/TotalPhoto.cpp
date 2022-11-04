@@ -6,6 +6,7 @@
 #include <wx/dirdlg.h>
 #include <wx/menu.h>
 #include <wx/string.h>
+#include <wx/gdicmn.h>
 
 bool TotalPhoto::OnInit()
 {
@@ -16,7 +17,7 @@ bool TotalPhoto::OnInit()
 	menu->Append(wxID_NEW, "New");
 	wxMenuBar *menuBar = new wxMenuBar();
 	menuBar->Append(menu, "Image Viewer");
-	root = new wxFrame(NULL, -1, "");
+	root = new wxFrame(NULL, -1, "", wxPoint(0,0), wxSize(0,0));
 	root->SetMenuBar(menuBar);
 	root->SetTransparent(1.0);
 	root->Show();

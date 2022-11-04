@@ -7,6 +7,7 @@
 #include <wx/frame.h>
 #include <wx/event.h>
 #include <string>
+#include <filesystem>
 
 class ImageViewer : public wxFrame
 {
@@ -21,7 +22,7 @@ private:
 	static const int ID_SORT_DATE = wxID_HIGHEST + 2;
 	static const int ID_SORT_RANDOM = wxID_HIGHEST + 3;
 
-	std::string path;
+	std::filesystem::path path;
 	int sortMethod = ID_SORT_NAME;
 };
 

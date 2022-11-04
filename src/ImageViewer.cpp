@@ -7,12 +7,15 @@
 #include <wx/sizer.h>
 #include <wx/stattext.h>
 #include <wx/checkbox.h>
-#include <filesystem>
 
 ImageViewer::ImageViewer(wxWindow *parent, wxWindowID id, const wxString &title, std::string path)
 			: wxFrame(parent, id, title)
 {
 	this->path = path;
+
+	//**************
+	// Create menu *
+	//**************
 
 	// Sub-menu with radio options to choose one sorting method
 	wxMenu *sortMenu = new wxMenu();
@@ -22,34 +25,90 @@ ImageViewer::ImageViewer(wxWindow *parent, wxWindowID id, const wxString &title,
 
 	// Top-level menu with sorting options and to open new viewer
 	wxMenu *viewerMenu = new wxMenu();
-	viewerMenu->AppendSubMenu(sortMenu, "Sort By");
 	viewerMenu->Append(wxID_NEW, "New");
+	viewerMenu->AppendSubMenu(sortMenu, "Sort By");
 
 	// Create menu bar
 	wxMenuBar *menuBar = new wxMenuBar();
 	menuBar->Append(viewerMenu, "Image Viewer");
 	this->SetMenuBar(menuBar);
 
-	wxBoxSizer *topSizer = new wxBoxSizer(wxHORIZONTAL);
+	//*********************************
+	// Create directory control panel *
+	//*********************************
 
-	/* References:
+	wxPanel *directoryPanel = new wxPanel(this, wxID_ANY, wxDefaultPosition, wxDefaultSize,
+										  wxTAB_TRAVERSAL | wxBORDER_SIMPLE);
+	wxBoxSizer *directorySizer = new wxBoxSizer(wxHORIZONTAL);
+	wxBoxSizer *directoryControlSizer = new wxBoxSizer(wxVERTICAL);
+
+	// Put a label of the root directory at the top of the panel
+	std::string label = "Directory: ";
+	label.append(this->path.filename().string());
+	directoryControlSizer->Add(new wxStaticText(directoryPanel, wxID_ANY, label), wxSizerFlags().Border(wxUP | wxDOWN | wxRIGHT, 5));
+
+	/* Add a checkbox for each subdirectory in the panel.
+	 * References:
 	 * https://stackoverflow.com/questions/612097
 	 * https://en.cppreference.com/w/cpp/filesystem */
-	wxPanel *directoryPanel = new wxPanel(this);
-	wxBoxSizer *directorySizer = new wxBoxSizer(wxVERTICAL);
-	directorySizer->Add(new wxStaticText(directoryPanel, wxID_ANY, path), wxSizerFlags());
-	for (const auto &entry : std::filesystem::directory_iterator(path))
+	for (const auto &entry : std::filesystem::directory_iterator(this->path))
 	{
 		if (entry.is_directory())
 		{
 			wxCheckBox *subdirectory = new wxCheckBox(directoryPanel, wxID_ANY, entry.path().filename().string());
-			directorySizer->Add(subdirectory, wxSizerFlags());
+			directoryControlSizer->Add(subdirectory, wxSizerFlags().Border(wxUP | wxDOWN | wxRIGHT, 5));
 		}
 	}
+
+	directorySizer->AddSpacer(5);
+	directorySizer->Add(directoryControlSizer, wxSizerFlags());
 	directoryPanel->SetSizer(directorySizer);
 
-	topSizer->Add(directoryPanel, wxSizerFlags());
-	SetSizer(topSizer);
+	//**********************************
+	// Create file types control panel *
+	//**********************************
+
+	// There should probably be a better way of generating these (custom values?)
+	std::string fileTypes[] = { "PNG", "JPEG", "WEBP", "MP4" };
+
+	wxPanel *typesPanel = new wxPanel(this, wxID_ANY, wxDefaultPosition, wxDefaultSize,
+									  wxTAB_TRAVERSAL | wxBORDER_SIMPLE);
+	wxBoxSizer *typesSizer = new wxBoxSizer(wxHORIZONTAL);
+	wxBoxSizer *typesControlSizer = new wxBoxSizer(wxVERTICAL);
+
+	// Put label at the top of the panel
+	typesControlSizer->Add(new wxStaticText(typesPanel, wxID_ANY, "File Types:"), wxSizerFlags().Border(wxUP | wxDOWN | wxRIGHT, 5));
+
+	// Add a checkbox for each file type
+	for (const auto &entry : fileTypes)
+		typesControlSizer->Add(new wxCheckBox(typesPanel, wxID_ANY, entry), wxSizerFlags().Border(wxUP | wxDOWN | wxRIGHT, 5));
+	
+	typesSizer->AddSpacer(5);
+	typesSizer->Add(typesControlSizer, wxSizerFlags());
+	typesPanel->SetSizer(typesSizer);
+
+	//************************************************
+	// Create the image viewer section of the window *
+	//************************************************
+
+	wxBoxSizer *imageSizer = new wxBoxSizer(wxHORIZONTAL);
+	imageSizer->Add(new wxStaticText(this, wxID_ANY, "Placeholder", wxDefaultPosition, wxDefaultSize, wxALIGN_CENTRE_HORIZONTAL), wxSizerFlags(1).Center());
+	imageSizer->SetMinSize(700, 500);
+
+	//****************************
+	// Create the overall window *
+	//****************************
+
+	wxBoxSizer *topSizer = new wxBoxSizer(wxHORIZONTAL);
+
+	wxBoxSizer *controlsSizer = new wxBoxSizer(wxVERTICAL);
+	controlsSizer->Add(directoryPanel, wxSizerFlags(1).Expand());
+	controlsSizer->Add(typesPanel, wxSizerFlags().Expand());
+
+	topSizer->Add(controlsSizer, wxSizerFlags().Expand());
+	topSizer->Add(imageSizer, wxSizerFlags(1).Expand());
+	this->SetSizerAndFit(topSizer);
+	this->Fit();
 }
 
 void ImageViewer::OnSortChanged(wxCommandEvent &event)

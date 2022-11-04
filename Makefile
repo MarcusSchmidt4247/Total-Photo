@@ -1,6 +1,6 @@
 # Marcus Schmidt
 
-CXXFLAGS = -Wall -std=c++11
+CXXFLAGS = -Wall -std=c++17
 
 wxPath = ~/Library/wxWidgets-3.2.1/build-cocoa-debug
 wxComp = `$(wxPath)/wx-config --cxxflags`

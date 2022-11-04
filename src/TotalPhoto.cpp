@@ -42,7 +42,7 @@ bool TotalPhoto::CreateNew()
 	// If the user chose a directory, open the main window
 	if (dir.compare("") != 0)
 	{
-		ImageViewer *frame = new ImageViewer(root, -1, "Image Viewer");
+		ImageViewer *frame = new ImageViewer(root, -1, "Image Viewer", dir);
 		frame->Show();
 
 		return true;

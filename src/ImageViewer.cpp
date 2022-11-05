@@ -10,6 +10,7 @@
 #include <wx/bitmap.h>
 #include <wx/scrolwin.h>
 #include <cstdlib>
+#include <cctype>
 #include <iostream>
 
 ImageViewer::ImageViewer(wxWindow *parent, wxWindowID id, const wxString &title, std::string path)
@@ -34,21 +35,24 @@ ImageViewer::ImageViewer(wxWindow *parent, wxWindowID id, const wxString &title,
 	wxMenu *controlsMenu = new wxMenu();
 	controlsMenu->Append(wxID_NEW, "Open Another Viewer");
 	controlsMenu->Append(wxID_REFRESH, "Refresh Viewer");
-	controlsMenu->Append(wxID_RESET, "Jump to First Image");
+	controlsMenu->Append(wxID_FIRST, "Jump to First Image");
 
-	wxMenu *showMenu = new wxMenu();
-	wxMenuItem *nameItem = new wxMenuItem(showMenu, wxID_PRINT, "Image Name", wxEmptyString, wxITEM_CHECK);
+	wxMenu *viewMenu = new wxMenu();
+	wxMenuItem *nameItem = new wxMenuItem(viewMenu, wxID_PRINT, "Image Name", wxEmptyString, wxITEM_CHECK);
 	nameItem->Check(showImageName);
-	showMenu->Append(nameItem);
-	wxMenuItem *panelItem = new wxMenuItem(showMenu, wxID_SETUP, "Control Panels", wxEmptyString, wxITEM_CHECK);
+	viewMenu->Append(nameItem);
+	wxMenuItem *panelItem = new wxMenuItem(viewMenu, wxID_SETUP, "Control Panels", wxEmptyString, wxITEM_CHECK);
 	panelItem->Check();
-	showMenu->Append(panelItem);
+	viewMenu->Append(panelItem);
+	wxMenuItem *backgroundItem = new wxMenuItem(viewMenu, wxID_SELECT_COLOR, "Dark Background", wxEmptyString, wxITEM_CHECK);
+	//backgroundItem->Check();
+	viewMenu->Append(backgroundItem);
 
 	// Top-level menu with sorting options and to open new viewer
 	wxMenu *viewerMenu = new wxMenu();
 	viewerMenu->AppendSubMenu(controlsMenu, "Actions");
 	viewerMenu->AppendSubMenu(sortMenu, "Sort By");
-	viewerMenu->AppendSubMenu(showMenu, "Show");
+	viewerMenu->AppendSubMenu(viewMenu, "View");
 
 	// Create menu bar
 	wxMenuBar *menuBar = new wxMenuBar();
@@ -110,7 +114,11 @@ ImageViewer::ImageViewer(wxWindow *parent, wxWindowID id, const wxString &title,
 	//**********************************
 
 	// This should be reworked to be more customizable and programatic
-	std::string temp[] = { ".png", ".jpg", ".webp", ".mp4" };
+	ToggledString types[4];
+	types[0] = { ".png", true };
+	types[1] = { ".jpg", true };
+	types[2] = { ".jpeg", true };
+	types[3] = { ".mp4", false };
 
 	wxPanel *typesPanel = new wxPanel(controlPanel, wxID_ANY, wxDefaultPosition, wxDefaultSize,
 									  wxTAB_TRAVERSAL | wxBORDER_SIMPLE);
@@ -120,13 +128,16 @@ ImageViewer::ImageViewer(wxWindow *parent, wxWindowID id, const wxString &title,
 	typesSizer->Add(new wxStaticText(typesPanel, wxID_ANY, "File Types:"), wxSizerFlags().Border(wxALL, 5));
 
 	// Add a checkbox for each file type
-	for (const auto &entry : temp)
+	for (const auto &entry : types)
 	{
-		ToggledString type = { entry };
-		fileTypes.push_back(type);
+		fileTypes.push_back(entry);
 
 		int id = GetId(1, (int) fileTypes.size() - 1);
-		typesSizer->Add(new wxCheckBox(typesPanel, id, entry), wxSizerFlags().Border(wxALL, 5));
+		wxCheckBox *checkbox = new wxCheckBox(typesPanel, id, entry.name);
+		if (entry.active)
+			checkbox->SetValue(true);
+
+		typesSizer->Add(checkbox, wxSizerFlags().Border(wxALL, 5));
 		Bind(wxEVT_CHECKBOX, &ImageViewer::OnFileTypeToggled, this, id);
 	}
 	
@@ -194,13 +205,19 @@ void ImageViewer::OnToggleSplit(wxCommandEvent &event)
 	}
 }
 
+void ImageViewer::OnToggleBackground(wxCommandEvent &event)
+{
+	if (this->GetBackgroundColour() == BACKGROUND_LIGHT)
+		this->SetBackgroundColour(BACKGROUND_DARK);
+	else
+		this->SetBackgroundColour(BACKGROUND_LIGHT);
+}
+
 void ImageViewer::OnSortChanged(wxCommandEvent &event)
 {
+	// Update the sorting method and recollect the images
 	sortMethod = event.GetId();
-
-	//*********************************************************************
-	// To-do: Re-sort the list of images according to the new sort method *
-	//*********************************************************************
+	GetImages();
 }
 
 void ImageViewer::OnDirectoryToggled(wxCommandEvent &event)
@@ -295,8 +312,13 @@ void ImageViewer::GetImages()
 				{
 					if (entry.is_regular_file())
 					{
-						// Compare the file's extension against the active extensions
-						std::string extension = entry.path().extension().string();
+						// Make the file's extension lowercase
+						const char *c_extension = entry.path().extension().c_str();
+						std::string extension = "";
+						for (int i = 0; i < entry.path().extension().string().length(); i++)
+							extension += tolower(c_extension[i]);
+
+						// Compare the file's lowercase extension against the active extensions
 						for (auto type : fileTypes)
 						{
 							if (type.active && extension.compare(type.name) == 0)
@@ -390,7 +412,7 @@ void ImageViewer::SortAlphabetically(std::vector<T> &vector, T element)
 	typename std::vector<T>::iterator it;
 	for (it = vector.begin(); it < vector.end(); it++)
 	{
-		// If the current element in the list is alphabetically greater, then break so the new element is inserted here
+		// If the current element in the list is alphabetically greater, break so the new element is inserted here
 		if ((*it).name.compare(element.name) > 0)
 			break;
 	}
@@ -418,15 +440,24 @@ void ImageViewer::SortRandomly(std::vector<T> &vector, T element)
 
 void ImageViewer::SortByTime(std::vector<File> &vector, File element)
 {
+	std::vector<File>::iterator it;
+	for (it = vector.begin(); it < vector.end(); it++)
+	{
+		// If the current element in the list was modified later, break so the new element is inserted here
+		if ((*it).modifiedTime > element.modifiedTime)
+			break;
+	}
 
+	vector.insert(it, element);
 }
 
 // Don't catch wxID_NEW because the event will rise to TotalPhoto.cpp
 BEGIN_EVENT_TABLE(ImageViewer, wxFrame)
 EVT_MENU(wxID_REFRESH, ImageViewer::OnRefresh)
 EVT_MENU(wxID_PRINT, ImageViewer::OnToggleName)
-EVT_MENU(wxID_RESET, ImageViewer::OnFirstFile)
+EVT_MENU(wxID_FIRST, ImageViewer::OnFirstFile)
 EVT_MENU(wxID_SETUP, ImageViewer::OnToggleSplit)
+EVT_MENU(wxID_SELECT_COLOR, ImageViewer::OnToggleBackground)
 EVT_MENU(ID_SORT_NAME, ImageViewer::OnSortChanged)
 EVT_MENU(ID_SORT_DATE, ImageViewer::OnSortChanged)
 EVT_MENU(ID_SORT_RANDOM, ImageViewer::OnSortChanged)

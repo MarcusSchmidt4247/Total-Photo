@@ -13,6 +13,7 @@
 #include <wx/statbmp.h>
 #include <wx/sizer.h>
 #include <wx/splitter.h>
+#include <wx/colour.h>
 
 class ImageViewer : public wxFrame
 {
@@ -40,6 +41,7 @@ private:
 	void OnToggleName(wxCommandEvent &event);
 	void OnFirstFile(wxCommandEvent &event);
 	void OnToggleSplit(wxCommandEvent &event);
+	void OnToggleBackground(wxCommandEvent &event);
 	void OnSortChanged(wxCommandEvent &event);
 	void OnDirectoryToggled(wxCommandEvent &event);
 	void OnFileTypeToggled(wxCommandEvent &event);
@@ -65,6 +67,8 @@ private:
 	static const int ID_SORT_NAME = wxID_HIGHEST + 1;
 	static const int ID_SORT_DATE = wxID_HIGHEST + 2;
 	static const int ID_SORT_RANDOM = wxID_HIGHEST + 3;
+	const wxColour BACKGROUND_LIGHT = wxColour(236, 236, 236);
+	const wxColour BACKGROUND_DARK = wxColour(24, 24, 24);
 
 	// Vector variables
 	std::vector<ToggledString> directories;

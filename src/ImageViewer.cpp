@@ -9,10 +9,11 @@
 #include <wx/image.h>
 #include <wx/bitmap.h>
 #include <wx/splitter.h>
+#include <wx/scrolwin.h>
 #include <iostream>
 
 ImageViewer::ImageViewer(wxWindow *parent, wxWindowID id, const wxString &title, std::string path)
-			: wxFrame(parent, id, title)
+			: wxFrame(parent, id, title, wxDefaultPosition, wxSize(700, 500))
 {
 	rootPath = path;
 
@@ -41,27 +42,25 @@ ImageViewer::ImageViewer(wxWindow *parent, wxWindowID id, const wxString &title,
 	menuBar->Append(viewerMenu, "Image Viewer");
 	this->SetMenuBar(menuBar);
 
-	//*************************
-	// Create splitter window *
-	//*************************
+	//*************************************
+	// Set up main split window component *
+	//*************************************
 
 	wxSplitterWindow *splitter = new wxSplitterWindow(this, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxSP_THIN_SASH);
 	splitter->SetSashGravity(0);
 	splitter->SetMinimumPaneSize(50);
 	splitter->Bind(wxEVT_KEY_DOWN, &ImageViewer::OnKeyPress, this);
 
-	wxBoxSizer *topSizer = new wxBoxSizer(wxHORIZONTAL);
-	topSizer->Add(splitter, wxSizerFlags(1).Expand());
+	//***************************************************
+	// Create control panel and its directory sub-panel *
+	//***************************************************
 
 	wxPanel *controlPanel = new wxPanel(splitter, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_SIMPLE);
 	wxBoxSizer *controlSizer = new wxBoxSizer(wxVERTICAL);
 
-	//*********************************
-	// Create directory control panel *
-	//*********************************
-
-	wxPanel *directoryPanel = new wxPanel(controlPanel, wxID_ANY, wxDefaultPosition, wxDefaultSize,
+	wxScrolledWindow *directoryPanel = new wxScrolledWindow(controlPanel, wxID_ANY, wxDefaultPosition, wxDefaultSize,
 										  wxTAB_TRAVERSAL | wxBORDER_SIMPLE);
+	directoryPanel->SetScrollRate(0, 15);
 	wxBoxSizer *directorySizer = new wxBoxSizer(wxVERTICAL);
 
 	// Put a label of the root directory at the top of the panel
@@ -90,19 +89,18 @@ ImageViewer::ImageViewer(wxWindow *parent, wxWindowID id, const wxString &title,
 	controlSizer->Add(directoryPanel, wxSizerFlags(1).Expand());
 
 	//**********************************
-	// Create file types control panel *
+	// Create the file types sub-panel *
 	//**********************************
+
+	// This should be reworked to be more customizable and programatic
+	std::string temp[] = { ".png", ".jpg", ".webp", ".mp4" };
+
 	wxPanel *typesPanel = new wxPanel(controlPanel, wxID_ANY, wxDefaultPosition, wxDefaultSize,
 									  wxTAB_TRAVERSAL | wxBORDER_SIMPLE);
 	wxBoxSizer *typesSizer = new wxBoxSizer(wxVERTICAL);
 
 	// Put label at the top of the panel
 	typesSizer->Add(new wxStaticText(typesPanel, wxID_ANY, "File Types:"), wxSizerFlags().Border(wxALL, 5));
-
-	//******************************************************************
-	// This should be reworked to be more customizable and programatic *
-	//******************************************************************
-	std::string temp[] = { ".png", ".jpg", ".webp", ".mp4" };
 
 	// Add a checkbox for each file type
 	for (const auto &entry : temp)
@@ -117,10 +115,11 @@ ImageViewer::ImageViewer(wxWindow *parent, wxWindowID id, const wxString &title,
 	
 	typesPanel->SetSizer(typesSizer);
 	controlSizer->Add(typesPanel, wxSizerFlags().Expand());
+	controlPanel->SetSizer(controlSizer);
 
-	//************************************************
-	// Create the image viewer section of the window *
-	//************************************************
+	//*********************
+	// Create image panel *
+	//*********************
 
 	wxPanel *imagePanel = new wxPanel(splitter, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
 	imageSizer = new wxBoxSizer(wxHORIZONTAL);
@@ -130,14 +129,23 @@ ImageViewer::ImageViewer(wxWindow *parent, wxWindowID id, const wxString &title,
 	imageSizer->SetMinSize(700, 500);
 	imagePanel->SetSizer(imageSizer);
 
-	//****************************
-	// Create the overall window *
-	//****************************
+	//**************************
+	// Configure entire window *
+	//**************************
 
-	controlPanel->SetSizer(controlSizer);
+	// Split the window into the two panels
 	splitter->SplitVertically(controlPanel, imagePanel);
-	this->SetSizerAndFit(topSizer);
 
+	// Insert this split window into the frame
+	wxBoxSizer *topSizer = new wxBoxSizer(wxHORIZONTAL);
+	topSizer->Add(splitter, wxSizerFlags(1).Expand());
+
+	// Record the current window size and set it as the minimum, then resize the window to fit the sizer
+	this->SetMinSize(this->GetSize());
+	this->SetSizer(topSizer);
+	topSizer->Fit(this);
+
+	// Set the window split position to match the sizer's preference
 	splitter->SetSashPosition(controlSizer->GetMinSize().GetWidth());
 }
 

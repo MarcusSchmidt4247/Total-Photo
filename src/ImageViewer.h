@@ -12,13 +12,14 @@
 #include <sys/stat.h>
 #include <wx/statbmp.h>
 #include <wx/sizer.h>
+#include <wx/splitter.h>
 
 class ImageViewer : public wxFrame
 {
 public:
 	struct ToggledString
 	{
-		std::string value;
+		std::string name;
 		bool active = false;
 	};
 
@@ -36,12 +37,15 @@ private:
 
 	// Event functions
 	void OnRefresh(wxCommandEvent &event);
+	void OnToggleName(wxCommandEvent &event);
+	void OnFirstFile(wxCommandEvent &event);
+	void OnToggleSplit(wxCommandEvent &event);
 	void OnSortChanged(wxCommandEvent &event);
 	void OnDirectoryToggled(wxCommandEvent &event);
 	void OnFileTypeToggled(wxCommandEvent &event);
 	void OnKeyPress(wxKeyEvent &event);
 
-	void LoadFile(std::string path);
+	void LoadFile(int index);
 
 	// Getters
 	void GetImages();
@@ -51,6 +55,11 @@ private:
 	// Print functions
 	void PrintActive(std::vector<ToggledString> vector, std::string name);
 	void PrintFile(File file);
+
+	// Sort functions
+	template <typename T> void SortAlphabetically(std::vector<T> &vector, T element);
+	template <typename T> void SortRandomly(std::vector<T> &vector, T element);
+	void SortByTime(std::vector<File> &vector, File element);
 
 	// Constant variables
 	static const int ID_SORT_NAME = wxID_HIGHEST + 1;
@@ -62,12 +71,19 @@ private:
 	std::vector<ToggledString> fileTypes;
 	std::vector<File> files;
 
-	// Miscellaneous variables
+	// GUI element variables
+	wxSplitterWindow *splitter;
+	wxPanel *controlPanel;
+	wxPanel *imagePanel;
 	wxStaticBitmap *imageBitmap;
 	wxBoxSizer *imageSizer;
+
+	// Setting variables
 	std::filesystem::path rootPath;
 	int sortMethod = ID_SORT_NAME;
+	bool showImageName = false;
 	int imageIndex = 0;
+	int defaultPanelWidth;
 };
 
 #endif

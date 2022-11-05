@@ -8,8 +8,8 @@
 #include <wx/checkbox.h>
 #include <wx/image.h>
 #include <wx/bitmap.h>
-#include <wx/splitter.h>
 #include <wx/scrolwin.h>
+#include <cstdlib>
 #include <iostream>
 
 ImageViewer::ImageViewer(wxWindow *parent, wxWindowID id, const wxString &title, std::string path)
@@ -31,11 +31,24 @@ ImageViewer::ImageViewer(wxWindow *parent, wxWindowID id, const wxString &title,
 	sortMenu->Append(ID_SORT_DATE, "Date Modified", wxEmptyString, wxITEM_RADIO);
 	sortMenu->Append(ID_SORT_RANDOM, "Random", wxEmptyString, wxITEM_RADIO);
 
+	wxMenu *controlsMenu = new wxMenu();
+	controlsMenu->Append(wxID_NEW, "Open Another Viewer");
+	controlsMenu->Append(wxID_REFRESH, "Refresh Viewer");
+	controlsMenu->Append(wxID_RESET, "Jump to First Image");
+
+	wxMenu *showMenu = new wxMenu();
+	wxMenuItem *nameItem = new wxMenuItem(showMenu, wxID_PRINT, "Image Name", wxEmptyString, wxITEM_CHECK);
+	nameItem->Check(showImageName);
+	showMenu->Append(nameItem);
+	wxMenuItem *panelItem = new wxMenuItem(showMenu, wxID_SETUP, "Control Panels", wxEmptyString, wxITEM_CHECK);
+	panelItem->Check();
+	showMenu->Append(panelItem);
+
 	// Top-level menu with sorting options and to open new viewer
 	wxMenu *viewerMenu = new wxMenu();
-	viewerMenu->Append(wxID_NEW, "New");
-	viewerMenu->Append(wxID_REFRESH, "Refresh");
+	viewerMenu->AppendSubMenu(controlsMenu, "Actions");
 	viewerMenu->AppendSubMenu(sortMenu, "Sort By");
+	viewerMenu->AppendSubMenu(showMenu, "Show");
 
 	// Create menu bar
 	wxMenuBar *menuBar = new wxMenuBar();
@@ -46,7 +59,7 @@ ImageViewer::ImageViewer(wxWindow *parent, wxWindowID id, const wxString &title,
 	// Set up main split window component *
 	//*************************************
 
-	wxSplitterWindow *splitter = new wxSplitterWindow(this, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxSP_THIN_SASH);
+	splitter = new wxSplitterWindow(this, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxSP_THIN_SASH);
 	splitter->SetSashGravity(0);
 	splitter->SetMinimumPaneSize(50);
 	splitter->Bind(wxEVT_KEY_DOWN, &ImageViewer::OnKeyPress, this);
@@ -55,7 +68,7 @@ ImageViewer::ImageViewer(wxWindow *parent, wxWindowID id, const wxString &title,
 	// Create control panel and its directory sub-panel *
 	//***************************************************
 
-	wxPanel *controlPanel = new wxPanel(splitter, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_SIMPLE);
+	controlPanel = new wxPanel(splitter, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_SIMPLE);
 	wxBoxSizer *controlSizer = new wxBoxSizer(wxVERTICAL);
 
 	wxScrolledWindow *directoryPanel = new wxScrolledWindow(controlPanel, wxID_ANY, wxDefaultPosition, wxDefaultSize,
@@ -67,7 +80,7 @@ ImageViewer::ImageViewer(wxWindow *parent, wxWindowID id, const wxString &title,
 	directorySizer->Add(new wxStaticText(directoryPanel, wxID_ANY, rootPath.filename().string()),
 							   wxSizerFlags().Border(wxALL, 5));
 
-	/* Add a checkbox for each subdirectory in the panel.
+	/* Alphabetically sort each discovered directory into the list.
 	 * References:
 	 * https://stackoverflow.com/questions/612097
 	 * https://en.cppreference.com/w/cpp/filesystem */
@@ -76,13 +89,17 @@ ImageViewer::ImageViewer(wxWindow *parent, wxWindowID id, const wxString &title,
 		if (entry.is_directory())
 		{
 			ToggledString directory = { entry.path().filename().string() };
-			directories.push_back(directory);
-
-			int id = GetId(0, (int) directories.size() - 1);
-			wxCheckBox *subdirectory = new wxCheckBox(directoryPanel, id, entry.path().filename().string());
-			directorySizer->Add(subdirectory, wxSizerFlags().Border(wxALL, 5));
-			Bind(wxEVT_CHECKBOX, &ImageViewer::OnDirectoryToggled, this, id);
+			SortAlphabetically(directories, directory);
 		}
+	}
+
+	// Add a checkbox for each sorted subdirectory in the panel (start at 1 to skip the invisible root directory)
+	for (int i = 1; i < directories.size(); i++)
+	{
+		int id = GetId(0, i);
+		wxCheckBox *subdirectory = new wxCheckBox(directoryPanel, id, directories[i].name);
+		directorySizer->Add(subdirectory, wxSizerFlags().Border(wxALL, 5));
+		Bind(wxEVT_CHECKBOX, &ImageViewer::OnDirectoryToggled, this, id);
 	}
 
 	directoryPanel->SetSizer(directorySizer);
@@ -121,7 +138,7 @@ ImageViewer::ImageViewer(wxWindow *parent, wxWindowID id, const wxString &title,
 	// Create image panel *
 	//*********************
 
-	wxPanel *imagePanel = new wxPanel(splitter, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
+	imagePanel = new wxPanel(splitter, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
 	imageSizer = new wxBoxSizer(wxHORIZONTAL);
 	imageBitmap = new wxStaticBitmap(imagePanel, wxID_ANY, wxBitmap(1,1));
 	imageBitmap->SetScaleMode(wxStaticBitmap::Scale_AspectFit);
@@ -146,12 +163,35 @@ ImageViewer::ImageViewer(wxWindow *parent, wxWindowID id, const wxString &title,
 	topSizer->Fit(this);
 
 	// Set the window split position to match the sizer's preference
-	splitter->SetSashPosition(controlSizer->GetMinSize().GetWidth());
+	defaultPanelWidth = controlSizer->GetMinSize().GetWidth();
+	splitter->SetSashPosition(defaultPanelWidth);
 }
 
 void ImageViewer::OnRefresh(wxCommandEvent &event)
 {
 	GetImages();
+}
+
+void ImageViewer::OnToggleName(wxCommandEvent &event)
+{
+	showImageName = !showImageName;
+}
+
+void ImageViewer::OnFirstFile(wxCommandEvent &event)
+{
+	imageIndex = 0;
+	LoadFile(imageIndex);
+}
+
+void ImageViewer::OnToggleSplit(wxCommandEvent &event)
+{
+	if (splitter->IsSplit())
+		splitter->Unsplit(controlPanel);
+	else
+	{
+		splitter->SplitVertically(controlPanel, imagePanel);
+		splitter->SetSashPosition(defaultPanelWidth);
+	}
 }
 
 void ImageViewer::OnSortChanged(wxCommandEvent &event)
@@ -186,7 +226,7 @@ void ImageViewer::OnKeyPress(wxKeyEvent &event)
 			if (imageIndex >= files.size())
 				imageIndex = 0;
 
-			LoadFile(files[imageIndex].path + files[imageIndex].name);
+			LoadFile(imageIndex);
 		}
 		else if (keyCode == WXK_LEFT)
 		{
@@ -194,18 +234,23 @@ void ImageViewer::OnKeyPress(wxKeyEvent &event)
 			if (imageIndex < 0)
 				imageIndex = files.size() - 1;
 
-			LoadFile(files[imageIndex].path + files[imageIndex].name);
+			LoadFile(imageIndex);
 		}
 	}
 
 	event.Skip();
 }
 
-void ImageViewer::LoadFile(std::string path)
+void ImageViewer::LoadFile(int index)
 {
+	if (index >= files.size())
+	{
+		std::cout << "LoadFile(): Invalid index" << std::endl;
+		return;
+	}
+
 	static bool first = true;
 	static wxImage image;
-
 	if (first)
 	{
 		image.AddHandler(new wxPNGHandler);
@@ -213,8 +258,16 @@ void ImageViewer::LoadFile(std::string path)
 		first = false;
 	}
 
+	std::string path = files[index].path + files[index].name;
 	if (image.LoadFile(path))
 	{
+		// Update the name of the window with the image name if enabled
+		std::string name = "Image Viewer";
+		if (showImageName)
+			name += " - " + files[index].name;
+		this->SetLabel(name);
+
+		// Update the image shown in the window
 		imageBitmap->SetBitmap(wxBitmap(image));
 		imageSizer->Layout();
 		image.Destroy();
@@ -234,7 +287,7 @@ void ImageViewer::GetImages()
 		if (directory.active)
 		{
 			// And that it still exists on the computer...
-			std::filesystem::path path = rootPath.string() + "/" + directory.value;
+			std::filesystem::path path = rootPath.string() + "/" + directory.name;
 			if (std::filesystem::is_directory(path))
 			{
 				// Then iterate through every file in the directory
@@ -246,7 +299,7 @@ void ImageViewer::GetImages()
 						std::string extension = entry.path().extension().string();
 						for (auto type : fileTypes)
 						{
-							if (type.active && extension.compare(type.value) == 0)
+							if (type.active && extension.compare(type.name) == 0)
 							{
 								std::string name = entry.path().filename().string();
 								std::string path = entry.path().string().substr(0, entry.path().string().length() - name.length());
@@ -266,11 +319,18 @@ void ImageViewer::GetImages()
 								}
 
 								File file = { name, path, time };
-								
-								//************************************************
-								// Insert into vector according to sorting rules *
-								//************************************************
-								files.push_back(file);
+
+								if (sortMethod == ID_SORT_NAME)
+									SortAlphabetically(files, file);
+								else if (sortMethod == ID_SORT_DATE)
+									SortByTime(files, file);
+								else if (sortMethod == ID_SORT_RANDOM)
+									SortRandomly(files, file);
+								else
+								{
+									std::cout << "ERROR: Unknown sorting method" << std::endl;
+									files.push_back(file);
+								}
 							}
 						}
 					}
@@ -284,7 +344,7 @@ void ImageViewer::GetImages()
 	if (files.size() > 0)
 	{
 		imageIndex = 0;
-		LoadFile(files[imageIndex].path + files[imageIndex].name);
+		LoadFile(imageIndex);
 	}
 }
 
@@ -311,7 +371,7 @@ void ImageViewer::PrintActive(std::vector<ImageViewer::ToggledString> vector, st
 	{
 		if (element.active)
 		{
-			std::cout << "-- " << element.value << std::endl;
+			std::cout << "-- " << element.name << std::endl;
 		}
 	}
 	std::cout << std::endl;
@@ -324,9 +384,49 @@ void ImageViewer::PrintFile(ImageViewer::File file)
 	std::cout << "-- Modified: " << asctime(localtime(&file.modifiedTime)) << std::endl << std::endl;
 }
 
+template <typename T>
+void ImageViewer::SortAlphabetically(std::vector<T> &vector, T element)
+{
+	typename std::vector<T>::iterator it;
+	for (it = vector.begin(); it < vector.end(); it++)
+	{
+		// If the current element in the list is alphabetically greater, then break so the new element is inserted here
+		if ((*it).name.compare(element.name) > 0)
+			break;
+	}
+
+	vector.insert(it, element);
+}
+
+template <typename T>
+void ImageViewer::SortRandomly(std::vector<T> &vector, T element)
+{
+	if (vector.size() > 0)
+	{
+		typename std::vector<T>::iterator it = vector.begin();
+
+		// Reference: https://en.cppreference.com/w/cpp/numeric/random/rand
+		std::srand(std::time(nullptr));
+		int index = std::rand() % vector.size();
+
+		std::advance(it, index);
+		vector.insert(it, element);
+	}
+	else
+		vector.push_back(element);
+}
+
+void ImageViewer::SortByTime(std::vector<File> &vector, File element)
+{
+
+}
+
 // Don't catch wxID_NEW because the event will rise to TotalPhoto.cpp
 BEGIN_EVENT_TABLE(ImageViewer, wxFrame)
 EVT_MENU(wxID_REFRESH, ImageViewer::OnRefresh)
+EVT_MENU(wxID_PRINT, ImageViewer::OnToggleName)
+EVT_MENU(wxID_RESET, ImageViewer::OnFirstFile)
+EVT_MENU(wxID_SETUP, ImageViewer::OnToggleSplit)
 EVT_MENU(ID_SORT_NAME, ImageViewer::OnSortChanged)
 EVT_MENU(ID_SORT_DATE, ImageViewer::OnSortChanged)
 EVT_MENU(ID_SORT_RANDOM, ImageViewer::OnSortChanged)

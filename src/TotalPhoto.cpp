@@ -3,7 +3,7 @@
 
 #include "TotalPhoto.h"
 #include "ImageViewer.h"
-#include <wx/dirdlg.h>
+#include "StaticUtilities.h"
 #include <wx/menu.h>
 #include <wx/string.h>
 #include <wx/gdicmn.h>
@@ -11,6 +11,7 @@
 bool TotalPhoto::OnInit()
 {
 	SetExitOnFrameDelete(false);
+	wxInitAllImageHandlers();
 
 	// Create an invisible root window so that there's permanently a menubar
 	wxMenu *menu = new wxMenu();
@@ -38,31 +39,13 @@ void TotalPhoto::OnNew(wxCommandEvent &event)
 // Try to create a new ImageViewer window and return whether or not it succeeded
 bool TotalPhoto::CreateNew()
 {
-	std::string dir = GetDirectory();
-
-	// If the user chose a directory, open the main window
+	std::string dir = StaticUtilities::GetDirectory(root, "Choose root directory");
 	if (dir.compare("") != 0)
 	{
 		ImageViewer *frame = new ImageViewer(root, -1, "Image Viewer", dir);
 		frame->Show();
-
 		return true;
 	}
 	else
 		return false;
-}
-
-/* Create a dialog that asks the user to choose a directory.
-   Return the directory path or an empty string if cancelled. */
-std::string TotalPhoto::GetDirectory()
-{
-	wxDirDialog *dialog = new wxDirDialog(root,
-								"Choose root directory",
-								"",
-								wxDD_DEFAULT_STYLE | wxDD_DIR_MUST_EXIST);
-
-	if (dialog->ShowModal() == wxID_OK)
-		return dialog->GetPath().utf8_string();
-	else
-		return "";
 }

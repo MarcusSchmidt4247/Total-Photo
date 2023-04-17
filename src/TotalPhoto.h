@@ -18,10 +18,7 @@ public:
 private:
 	DECLARE_EVENT_TABLE();
 	void OnNew(wxCommandEvent &event);
-
 	bool CreateNew();
-	std::string GetDirectory();
-
 	wxFrame *root;
 };
 

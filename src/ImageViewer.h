@@ -4,6 +4,7 @@
 #ifndef IMAGE_VIEWER
 #define IMAGE_VIEWER
 
+#include "Filter.h"
 #include <wx/frame.h>
 #include <wx/event.h>
 #include <string>
@@ -24,6 +25,12 @@ public:
 		bool active = false;
 	};
 
+	struct Directory : ToggledString
+	{
+		bool expanded = false;
+		Filter *filter = nullptr;
+	};
+
 	struct File
 	{
 		std::string name;
@@ -36,6 +43,8 @@ public:
 private:
 	DECLARE_EVENT_TABLE();
 
+	enum class ListType { DIRECTORIES = 0, FILE_TYPES = 1, BUTTONS = 2 };
+
 	// Event functions
 	void OnRefresh(wxCommandEvent &event);
 	void OnToggleName(wxCommandEvent &event);
@@ -44,6 +53,8 @@ private:
 	void OnToggleBackground(wxCommandEvent &event);
 	void OnSortChanged(wxCommandEvent &event);
 	void OnDirectoryToggled(wxCommandEvent &event);
+	void OnDirectoryExpanded(wxCommandEvent &event);
+	void OnDirectoryOverflow(wxCommandEvent &event);
 	void OnFileTypeToggled(wxCommandEvent &event);
 	void OnKeyPress(wxKeyEvent &event);
 
@@ -51,8 +62,8 @@ private:
 
 	// Getters
 	void GetImages();
-	int GetId(int type, int index);
-	int GetIndex(int type, int id);
+	int GetId(ListType type, int index);
+	int GetIndex(ListType type, int id);
 
 	// Print functions
 	void PrintActive(std::vector<ToggledString> vector, std::string name);
@@ -71,7 +82,7 @@ private:
 	const wxColour BACKGROUND_DARK = wxColour(24, 24, 24);
 
 	// Vector variables
-	std::vector<ToggledString> directories;
+	std::vector<Directory> directories;
 	std::vector<ToggledString> fileTypes;
 	std::vector<File> files;
 

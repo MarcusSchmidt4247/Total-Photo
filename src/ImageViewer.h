@@ -13,7 +13,10 @@
 #include <sys/stat.h>
 #include <wx/statbmp.h>
 #include <wx/sizer.h>
+#include <wx/checkbox.h>
+#include <wx/button.h>
 #include <wx/splitter.h>
+#include <wx/scrolwin.h>
 #include <wx/colour.h>
 
 class ImageViewer : public wxFrame
@@ -27,13 +30,20 @@ public:
 
 	struct Directory : ToggledString
 	{
-		bool expanded = false;
+		Directory *parent = nullptr;
 		Filter *filter = nullptr;
+		wxBoxSizer *subdirectorySizer = nullptr;
+		wxCheckBox *activeCheckbox = nullptr;
+		wxButton *expandButton = nullptr;
+		std::vector<Directory> subdirectories;
+		std::string indicesPath;
+		bool expanded = false;
 	};
 
 	struct File
 	{
 		std::string name;
+		std::string originalName;
 		std::string path;
 		time_t modifiedTime;
 	};
@@ -58,10 +68,11 @@ private:
 	void OnFileTypeToggled(wxCommandEvent &event);
 	void OnKeyPress(wxKeyEvent &event);
 
-	void LoadFile(int index);
-
 	// Getters
+	std::vector<Directory> GetSubdirectories(Directory *directory);
 	void GetImages();
+	std::vector<File> RecurseGetImages(std::filesystem::path path, Directory *directory);
+	std::vector<File> RecurseGetImages(std::filesystem::path path, const std::unordered_map<std::string, int> &filterItems, const bool defaultValidity);
 	int GetId(ListType type, int index);
 	int GetIndex(ListType type, int id);
 
@@ -73,6 +84,15 @@ private:
 	template <typename T> void SortAlphabetically(std::vector<T> &vector, T element);
 	template <typename T> void SortRandomly(std::vector<T> &vector, T element);
 	void SortByTime(std::vector<File> &vector, File element);
+
+	// Miscellaneous functions
+	void LoadFile(int index);
+	void RecurseActivationState(std::vector<Directory> &subdirectories, bool active);
+	void AddSubdirectories(wxBoxSizer *sizer, std::vector<Directory> &subdirectories);
+	Directory * FindDirectory(std::string path);
+	void MergeVectors(std::vector<File> &a, const std::vector<File> &b);
+	bool IsValidExtension(std::string extension);
+	void AddImage(const std::filesystem::directory_entry &file, std::vector<File> &vector, const std::unordered_map<std::string, int> &filterItems, const bool defaultValidity);
 
 	// Constant variables
 	static const int ID_SORT_NAME = wxID_HIGHEST + 1;
@@ -90,11 +110,14 @@ private:
 	wxSplitterWindow *splitter;
 	wxPanel *controlPanel;
 	wxPanel *imagePanel;
+	wxScrolledWindow *directoryPanel;
 	wxStaticBitmap *imageBitmap;
 	wxBoxSizer *imageSizer;
+	wxBoxSizer *topSizer;
 
 	// Setting variables
 	std::filesystem::path rootPath;
+	std::string applicationDirectory;
 	int sortMethod = ID_SORT_NAME;
 	bool showImageName = false;
 	int imageIndex = 0;

@@ -28,6 +28,13 @@ public:
 		path = _path;
 	}
 
+	Filter * GetCopy()
+	{
+		Filter *copy = new Filter();
+		copy->SetFilter(type, path);
+		return copy;
+	}
+
 	Type GetType() { return type; }
 	std::string GetPath() { return path; }
 	std::unordered_map<std::string, int> GetFilterItems()

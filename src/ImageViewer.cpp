@@ -6,12 +6,10 @@
 #include <wx/menu.h>
 #include <wx/panel.h>
 #include <wx/stattext.h>
-#include <wx/checkbox.h>
-#include <wx/button.h>
 #include <wx/image.h>
 #include <wx/bitmap.h>
-#include <wx/scrolwin.h>
 #include <wx/stdpaths.h>
+#include <wx/tokenzr.h>
 #include <unordered_map>
 #include <cstdlib>
 #include <cctype>
@@ -22,9 +20,10 @@ ImageViewer::ImageViewer(wxWindow *parent, wxWindowID id, const wxString &title,
 {
 	rootPath = path;
 
-	// Add the root directory to the list as an always-active source for files
-	Directory rootDir = { { "", true }, true };
-	directories.push_back(rootDir);
+	// Get the default Documents folder and modify it to lead to the user Application folder
+	applicationDirectory = std::string(wxStandardPaths::Get().GetDocumentsDir());
+	applicationDirectory.erase(applicationDirectory.size() - 9, 9);
+	applicationDirectory = applicationDirectory.append("Applications/Total Photo/");
 
 	//**************
 	// Create menu *
@@ -79,7 +78,7 @@ ImageViewer::ImageViewer(wxWindow *parent, wxWindowID id, const wxString &title,
 	controlPanel = new wxPanel(splitter, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_SIMPLE);
 	wxBoxSizer *controlSizer = new wxBoxSizer(wxVERTICAL);
 
-	wxScrolledWindow *directoryPanel = new wxScrolledWindow(controlPanel, wxID_ANY, wxDefaultPosition, wxDefaultSize,
+	directoryPanel = new wxScrolledWindow(controlPanel, wxID_ANY, wxDefaultPosition, wxDefaultSize,
 										  wxTAB_TRAVERSAL | wxBORDER_SIMPLE);
 	directoryPanel->SetScrollRate(0, 15);
 	wxBoxSizer *directorySizer = new wxBoxSizer(wxVERTICAL);
@@ -88,54 +87,8 @@ ImageViewer::ImageViewer(wxWindow *parent, wxWindowID id, const wxString &title,
 	directorySizer->Add(new wxStaticText(directoryPanel, wxID_ANY, rootPath.filename().string()),
 							   wxSizerFlags().Border(wxALL, 5));
 
-	/* Alphabetically sort each discovered directory into the list.
-	 * References:
-	 * https://stackoverflow.com/questions/612097
-	 * https://en.cppreference.com/w/cpp/filesystem */
-	for (const auto &entry : std::filesystem::directory_iterator(rootPath))
-	{
-		if (entry.is_directory())
-		{
-			Directory directory = { { entry.path().filename().string() } };
-			SortAlphabetically(directories, directory);
-		}
-	}
-
-	 // Add the sorted subdirectories to the panel (start at index 1 to skip the root directory)
-	for (int i = 1; i < directories.size(); i++)
-	{
-		wxBoxSizer *subdirectorySizer = new wxBoxSizer(wxHORIZONTAL);
-
-		// Calculate the unique ID this element can be found by later based on its index in the list
-		int id = GetId(ImageViewer::ListType::DIRECTORIES, i);
-
-		// Add a checkbox labelled with the subdirectory's name
-		wxCheckBox *subdirectory = new wxCheckBox(directoryPanel, id, directories[i].name);
-		subdirectorySizer->Add(subdirectory);
-		Bind(wxEVT_CHECKBOX, &ImageViewer::OnDirectoryToggled, this, id);
-
-		// Get the default Documents folder and modify it to lead to the user Application folder
-		std::string applicationDirectory = std::string(wxStandardPaths::Get().GetDocumentsDir());
-		applicationDirectory.erase(applicationDirectory.size() - 9, 9);
-		applicationDirectory = applicationDirectory.append("Applications/Total Photo/assets/");
-
-		// Add a button to expand or collapse this subdirectory's own subdirectories
-		id = GetId(ImageViewer::ListType::BUTTONS, i*2);
-		wxButton *expandButton = new wxButton(directoryPanel, id, wxEmptyString, wxDefaultPosition, wxSize(27,12), wxBU_NOTEXT | wxBORDER_NONE);
-		expandButton->SetBitmap(wxBitmap(applicationDirectory + "expand.png", wxBITMAP_TYPE_PNG));
-		subdirectorySizer->Add(expandButton, wxSizerFlags().Border(wxLEFT | wxRIGHT | wxUP, 4));
-		subdirectorySizer->AddSpacer(4);
-		Bind(wxEVT_BUTTON, &ImageViewer::OnDirectoryExpanded, this, id);
-
-		// Add a button to open a menu with more options
-		id = GetId(ImageViewer::ListType::BUTTONS, (i*2)+1);
-		wxButton *overflowButton = new wxButton(directoryPanel, id, wxEmptyString, wxDefaultPosition, wxSize(15,12), wxBU_NOTEXT | wxBORDER_NONE);
-		overflowButton->SetBitmap(wxBitmap(applicationDirectory + "overflow.png", wxBITMAP_TYPE_PNG));
-		subdirectorySizer->Add(overflowButton, wxSizerFlags().Border(wxLEFT | wxRIGHT | wxUP, 4));
-		Bind(wxEVT_BUTTON, &ImageViewer::OnDirectoryOverflow, this, id);
-
-		directorySizer->Add(subdirectorySizer, wxSizerFlags().Border(wxALL, 5));
-	}
+	directories = GetSubdirectories(nullptr);
+	AddSubdirectories(directorySizer, directories);
 
 	directoryPanel->SetSizer(directorySizer);
 	controlSizer->Add(directoryPanel, wxSizerFlags(1).Expand());
@@ -196,7 +149,7 @@ ImageViewer::ImageViewer(wxWindow *parent, wxWindowID id, const wxString &title,
 	splitter->SplitVertically(controlPanel, imagePanel);
 
 	// Insert this split window into the frame
-	wxBoxSizer *topSizer = new wxBoxSizer(wxHORIZONTAL);
+	topSizer = new wxBoxSizer(wxHORIZONTAL);
 	topSizer->Add(splitter, wxSizerFlags(1).Expand());
 
 	// Record the current window size and set it as the minimum, then resize the window to fit the sizer
@@ -253,24 +206,55 @@ void ImageViewer::OnSortChanged(wxCommandEvent &event)
 
 void ImageViewer::OnDirectoryToggled(wxCommandEvent &event)
 {
-	int index = GetIndex(ImageViewer::ListType::DIRECTORIES, event.GetId());
-	directories[index].active = !directories[index].active;
+	// Find the directory
+	wxStringTokenizer *tokenizer = (wxStringTokenizer *) event.GetEventUserData();
+	std::string userData = tokenizer->GetString().ToStdString();
+	ImageViewer::Directory *directory = FindDirectory(userData);
+
+	directory->active = !directory->active;
+
+	// Recursively set all of this directory's subdirectories to match its activation state
+	RecurseActivationState(directory->subdirectories, directory->active);
 }
 
 void ImageViewer::OnDirectoryExpanded(wxCommandEvent &event)
 {
-	int index = GetIndex(ImageViewer::ListType::BUTTONS, event.GetId()) / 2;
-	std::cout << "Expanded directory " << directories[index].name << std::endl;
+	// Find the directory
+	wxStringTokenizer *tokenizer = (wxStringTokenizer *) event.GetEventUserData();
+	std::string userData = tokenizer->GetString().ToStdString();
+	ImageViewer::Directory *subdirectory = FindDirectory(userData);
 
-	//********************************
-	// TO-DO: Implement this feature *
-	//********************************
+	// If this is the first time expanding this directory, create its list of subdirectories in its sizer
+	if (!subdirectory->expanded && subdirectory->subdirectories.empty())
+	{
+		subdirectory->subdirectories = GetSubdirectories(subdirectory);
+		AddSubdirectories(subdirectory->subdirectorySizer, subdirectory->subdirectories);
+	}
+	// Otherwise, simply hide or show the elements in its sizer
+	else
+		subdirectory->subdirectorySizer->ShowItems(!subdirectory->expanded);
+
+	// Update the relevant GUI containers
+	subdirectory->subdirectorySizer->Layout(); // puts subdirectories in correct place
+	directoryPanel->Layout(); // moves surrounding directories to new correct place
+	controlPanel->Layout(); // gives panel scrollbar if necessary
+
+	// Toggle this directory's expanded state
+	subdirectory->expanded = !subdirectory->expanded;
+
+	// And finally toggle the expand button's image icon to match
+	std::string imageName = (subdirectory->expanded) ? "assets/collapse.png" : "assets/expand.png";
+	subdirectory->expandButton->SetBitmap(wxBitmap(applicationDirectory + imageName, wxBITMAP_TYPE_PNG));
 }
 
 void ImageViewer::OnDirectoryOverflow(wxCommandEvent &event)
 {
-	int index = (GetIndex(ImageViewer::ListType::BUTTONS, event.GetId()) - 1) / 2;
-	FilterEditor *filterEditor = new FilterEditor(this, wxID_ANY, "\"" + directories[index].name + "\" Filters", &(directories[index].filter), rootPath);
+	// Find the directory
+	wxStringTokenizer *tokenizer = (wxStringTokenizer *) event.GetEventUserData();
+	std::string userData = tokenizer->GetString().ToStdString();
+	ImageViewer::Directory *directory = FindDirectory(userData);
+
+	FilterEditor *filterEditor = new FilterEditor(this, wxID_ANY, "\"" + directory->name + "\" Filters", &(directory->filter), rootPath);
 	filterEditor->Show();
 }
 
@@ -285,6 +269,8 @@ void ImageViewer::OnKeyPress(wxKeyEvent &event)
 	//*******************************************************************************************************
 	// TO-DO: Sometimes this method won't be called because the control panel gets focus, needs to be fixed *
 	//*******************************************************************************************************
+
+	event.Skip();
 
 	if (files.size() > 0)
 	{
@@ -310,35 +296,38 @@ void ImageViewer::OnKeyPress(wxKeyEvent &event)
 	}
 	else
 		std::cout << "OnKeyPress(): No files" << std::endl;
-
-	event.Skip();
 }
 
-void ImageViewer::LoadFile(int index)
+std::vector<ImageViewer::Directory> ImageViewer::GetSubdirectories(Directory *directory)
 {
-	if (index >= files.size())
+	// Construct a filepath to the provided directory by moving up the chain of parents to the root filepath
+	std::string path = "";
+	Directory *parent = directory;
+	while (parent != nullptr)
 	{
-		std::cout << "LoadFile(): Invalid index" << std::endl;
-		return;
+		path.insert(0, "/" + parent->name);
+		parent = parent->parent;
+	}
+	path.insert(0, rootPath.string());
+
+	Filter *filter = (directory == nullptr || directory->filter == nullptr) ? nullptr : directory->filter->GetCopy();
+	bool active = (directory == nullptr) ? false : directory->active;
+
+	/* Alphabetically sort each discovered directory into a list of subdirectories.
+	 * References:
+	 * https://stackoverflow.com/questions/612097
+	 * https://en.cppreference.com/w/cpp/filesystem */
+	std::vector<ImageViewer::Directory> subdirectories;
+	for (const auto &entry : std::filesystem::directory_iterator(path))
+	{
+		if (entry.is_directory())
+		{
+			ImageViewer::Directory subdirectory = { { entry.path().filename().string(), active }, directory, filter };
+			SortAlphabetically(subdirectories, subdirectory);
+		}
 	}
 
-	static wxImage image;
-	std::string path = files[index].path + files[index].name;
-	if (image.LoadFile(path))
-	{
-		// Update the name of the window with the image name if enabled
-		std::string name = "Image Viewer";
-		if (showImageName)
-			name += " - " + files[index].name;
-		this->SetLabel(name);
-
-		// Update the image shown in the window
-		imageBitmap->SetBitmap(wxBitmap(image));
-		imageSizer->Layout();
-		image.Destroy();
-	}
-	else
-		std::cout << "LoadFile(): Failed to load file \"" << path << "\"" << std::endl;
+	return subdirectories;
 }
 
 void ImageViewer::GetImages()
@@ -348,90 +337,8 @@ void ImageViewer::GetImages()
 	// For every directory...
 	for (Directory directory : directories)
 	{
-		// Check if it's active...
-		if (directory.active)
-		{
-			// And that it still exists on the computer...
-			std::filesystem::path path = rootPath.string() + "/" + directory.name;
-			if (std::filesystem::is_directory(path))
-			{
-				// Retrieve this directory's filtered items now to avoid repeated work (won't be used quite yet)
-				bool valid;
-				std::unordered_map<std::string, int> filterItems;
-				if (directory.filter != nullptr)
-					filterItems = directory.filter->GetFilterItems();
-				
-				// Then iterate through every file in the directory
-				for (const auto &entry : std::filesystem::directory_iterator(path))
-				{
-					if (entry.is_regular_file())
-					{
-						// Make the file's extension lowercase
-						const char *c_extension = entry.path().extension().c_str();
-						std::string extension = "";
-						for (int i = 0; i < entry.path().extension().string().length(); i++)
-							extension += tolower(c_extension[i]);
-
-						// Compare the file's lowercase extension against the active extensions
-						for (auto type : fileTypes)
-						{
-							if (type.active && extension.compare(type.name) == 0)
-							{
-								std::string name = entry.path().filename().string();
-								std::string path = entry.path().string().substr(0, entry.path().string().length() - name.length());
-								
-								// Set up the default state of whether an image will be accepted or excluded before applying the filter
-								if (directory.filter == nullptr || directory.filter->GetType() != Filter::INCLUDE)
-									valid = true;
-								else
-									valid = false;
-
-								// If there is a filter, check whether this image is in the filter and flip its accept state if it's present
-								if (directory.filter != nullptr && directory.filter->GetType() != Filter::NONE)
-								{
-									// Standardize image name before comparing with filter so "image.jpg" and "image copy 2.jpg" will be equal
-									if (filterItems.find(StaticUtilities::StandardizeImageName(name)) != filterItems.end())
-										valid = !valid;
-								}
-
-								if (valid)
-								{
-									// Struct documentation: https://man7.org/linux/man-pages/man0/sys_stat.h.0p.html
-									struct stat info;
-									time_t time;
-									// Function documentation: https://pubs.opengroup.org/onlinepubs/007908799/xsh/stat.html
-									if (stat(entry.path().c_str(), &info) == 0)
-									{
-										time = info.st_mtime;
-									}
-									else
-									{
-										std::cout << "GetImages(): Unable to obtain time for \"" << path << "\"" << std::endl;
-										time = 0;
-									}
-
-									File file = { name, path, time };
-
-									if (sortMethod == ID_SORT_NAME)
-										SortAlphabetically(files, file);
-									else if (sortMethod == ID_SORT_DATE)
-										SortByTime(files, file);
-									else if (sortMethod == ID_SORT_RANDOM)
-										SortRandomly(files, file);
-									else
-									{
-										std::cout << "GetImages(): Unknown sorting method" << std::endl;
-										files.push_back(file);
-									}
-								}
-							}
-						}
-					}
-				}
-			}
-			else
-				std::cout << "GetImages(): Directory \"" << path.string() << "\" does not exist" << std::endl;
-		}
+		std::vector<ImageViewer::File> newFiles = RecurseGetImages(rootPath, &directory);
+		MergeVectors(files, newFiles);
 	}
 
 	if (files.size() > 0)
@@ -439,6 +346,78 @@ void ImageViewer::GetImages()
 		imageIndex = 0;
 		LoadFile(imageIndex);
 	}
+}
+
+std::vector<ImageViewer::File> ImageViewer::RecurseGetImages(std::filesystem::path path, Directory *directory)
+{
+	std::vector<ImageViewer::File> images;
+
+	// Confirm the provided directory still exists in its expected location
+	if (std::filesystem::is_directory((std::filesystem::path) (path.string() + "/" + directory->name)))
+	{
+		// Gather information about the filter on this directory that will be passed along
+		//*************************************************************************************************
+		// NOTE: This work is unused in one of the logical paths but avoids repeating code. Improve this. *
+		//*************************************************************************************************
+		std::unordered_map<std::string, int> filterItems;
+		bool defaultValidity = true;
+		if (directory->filter != nullptr && directory->filter->GetType() != Filter::NONE)
+		{
+			filterItems = directory->filter->GetFilterItems();
+			if (directory->filter->GetType() == Filter::INCLUDE)
+				defaultValidity = false;
+		}
+
+		// If it has nested subdirectories in the code
+		if (!directory->subdirectories.empty())
+		{
+			// Recurse to get their images
+			for (auto subdirectory : directory->subdirectories)
+			{
+				std::vector<ImageViewer::File> recursedImages = RecurseGetImages(path.string() + "/" + directory->name, &subdirectory);
+				MergeVectors(images, recursedImages);
+			}
+
+			// And then get the images from this directory if it's active
+			if (directory->active)
+			{
+				for (const auto &entry : std::filesystem::directory_iterator(path))
+				{
+					if (entry.is_regular_file() && IsValidExtension(entry.path().extension().string()))
+						AddImage(entry, images, filterItems, defaultValidity);
+				}
+			}
+		}
+		// If it does not have nested subdirectories in the code but it is activated
+		else if (directory->active)
+		{
+			// And then recurse with a different method
+			std::vector<ImageViewer::File> recursedImages = RecurseGetImages(path.string() + "/" + directory->name, filterItems, defaultValidity);
+			MergeVectors(images, recursedImages);
+		}
+	}
+	else
+		std::cout << "RecurseGetImages(): Directory \"" << (path.string() + "/" + directory->name) << "\" does not exist" << std::endl;
+	
+	return images;
+}
+
+std::vector<ImageViewer::File> ImageViewer::RecurseGetImages(std::filesystem::path path, const std::unordered_map<std::string, int> &filterItems, const bool defaultValidity)
+{
+	std::vector<ImageViewer::File> images;
+
+	for (const auto &entry : std::filesystem::directory_iterator(path))
+	{
+		if (entry.is_directory())
+		{
+			std::vector<ImageViewer::File> recursedImages = RecurseGetImages(entry.path(), filterItems, defaultValidity);
+			MergeVectors(images, recursedImages);
+		}
+		else if (entry.is_regular_file() && IsValidExtension(entry.path().extension().string()))
+			AddImage(entry, images, filterItems, defaultValidity);
+	}
+	
+	return images;
 }
 
 // Calculates a unique ID for an item in a list (e.g. the list of directories a user chooses from) based on its index
@@ -474,7 +453,7 @@ void ImageViewer::PrintActive(std::vector<ImageViewer::ToggledString> vector, st
 
 void ImageViewer::PrintFile(ImageViewer::File file)
 {
-	std::cout << "\"" << file.name << "\" file:" << std::endl;
+	std::cout << "\"" << file.originalName << "\" file:" << std::endl;
 	std::cout << "-- Path: " << file.path << std::endl;
 	std::cout << "-- Modified: " << asctime(localtime(&file.modifiedTime)) << std::endl << std::endl;
 }
@@ -522,6 +501,210 @@ void ImageViewer::SortByTime(std::vector<File> &vector, File element)
 	}
 
 	vector.insert(it, element);
+}
+
+void ImageViewer::LoadFile(int index)
+{
+	if (index >= files.size())
+	{
+		std::cout << "LoadFile(): Invalid index" << std::endl;
+		return;
+	}
+
+	static wxImage image;
+	std::string path = files[index].path + files[index].originalName;
+	if (image.LoadFile(path))
+	{
+		// Update the name of the window with the image name if enabled
+		std::string name = "Image Viewer";
+		if (showImageName)
+			name += " - " + files[index].originalName;
+		this->SetLabel(name);
+
+		// Update the image shown in the window
+		imageBitmap->SetBitmap(wxBitmap(image));
+		imageSizer->Layout();
+		image.Destroy();
+	}
+	else
+		std::cout << "LoadFile(): Failed to load file \"" << path << "\"" << std::endl;
+}
+
+void ImageViewer::RecurseActivationState(std::vector<ImageViewer::Directory> &subdirectories, bool active)
+{
+	for (ImageViewer::Directory &directory : subdirectories)
+	{
+		directory.active = active;
+		directory.activeCheckbox->SetValue(active);
+
+		RecurseActivationState(directory.subdirectories, active);
+	}
+}
+
+void ImageViewer::AddSubdirectories(wxBoxSizer *sizer, std::vector<ImageViewer::Directory> &subdirectories)
+{
+	if (sizer == nullptr)
+		std::cout << "AddSubdirectories(): sizer is null" << std::endl;
+	else if (subdirectories.empty())
+		sizer->Add(new wxStaticText(directoryPanel, wxID_ANY, "No subdirectories"), wxSizerFlags().Border(wxALL, 5));
+	else
+	{
+		// Add the sorted subdirectories to the panel
+		std::string indicesPath;
+		for (int i = 0; i < subdirectories.size(); i++)
+		{
+			if (subdirectories[i].parent != nullptr)
+				indicesPath = subdirectories[i].parent->indicesPath + ":" + std::to_string(i);
+			else
+				indicesPath = std::to_string(i);
+			subdirectories[i].indicesPath = indicesPath;
+
+			wxBoxSizer *subdirectorySizer = new wxBoxSizer(wxHORIZONTAL);
+
+			// Add a checkbox labelled with the subdirectory's name
+			int id = StaticUtilities::GetUniqueId();
+			subdirectories[i].activeCheckbox = new wxCheckBox(directoryPanel, id, subdirectories[i].name);
+			subdirectories[i].activeCheckbox->SetValue(subdirectories[i].active);
+			subdirectorySizer->Add(subdirectories[i].activeCheckbox);
+			Bind(wxEVT_CHECKBOX, &ImageViewer::OnDirectoryToggled, this, id, wxID_ANY, new wxStringTokenizer(indicesPath, ":"));
+
+			// Add a button to expand or collapse this subdirectory's own subdirectories
+			id = StaticUtilities::GetUniqueId();
+			subdirectories[i].expandButton = new wxButton(directoryPanel, id, wxEmptyString, wxDefaultPosition, wxSize(27,12), wxBU_NOTEXT | wxBORDER_NONE);
+			subdirectories[i].expandButton->SetBitmap(wxBitmap(applicationDirectory + "assets/expand.png", wxBITMAP_TYPE_PNG));
+			subdirectorySizer->Add(subdirectories[i].expandButton, wxSizerFlags().Border(wxLEFT | wxRIGHT | wxUP, 4));
+			subdirectorySizer->AddSpacer(4);
+			Bind(wxEVT_BUTTON, &ImageViewer::OnDirectoryExpanded, this, id, wxID_ANY, new wxStringTokenizer(indicesPath, ":"));
+
+			// Add a button to open a menu with more options
+			id = StaticUtilities::GetUniqueId();
+			wxButton *overflowButton = new wxButton(directoryPanel, id, wxEmptyString, wxDefaultPosition, wxSize(15,12), wxBU_NOTEXT | wxBORDER_NONE);
+			overflowButton->SetBitmap(wxBitmap(applicationDirectory + "assets/overflow.png", wxBITMAP_TYPE_PNG));
+			subdirectorySizer->Add(overflowButton, wxSizerFlags().Border(wxLEFT | wxRIGHT | wxUP, 4));
+			Bind(wxEVT_BUTTON, &ImageViewer::OnDirectoryOverflow, this, id, wxID_ANY, new wxStringTokenizer(indicesPath, ":"));
+
+			sizer->Add(subdirectorySizer, wxSizerFlags().Border(wxALL, 5));
+
+			// Add another sizer beneath this subdirectory where its own subdirectories can expand later
+			wxBoxSizer *childSizer = new wxBoxSizer(wxVERTICAL);
+			subdirectories[i].subdirectorySizer = childSizer;
+			sizer->Add(childSizer, wxSizerFlags().Border(wxLEFT, 20));
+		}
+	}
+}
+
+// Navigate the nested lists of directories according to the given path (a string formatted so that subsequent indices to move into are separated by colons).
+// Return a null pointer if the path is invalid
+ImageViewer::Directory * ImageViewer::FindDirectory(std::string path)
+{
+	wxStringTokenizer localTokenizer(path, ":");
+	ImageViewer::Directory *directory = nullptr;
+	while (localTokenizer.HasMoreTokens())
+	{
+		int index = std::stoi(localTokenizer.GetNextToken().ToStdString());
+
+		if (directory == nullptr && index >= 0 && index < directories.size())
+			directory = &directories[index];
+		else if (directory != nullptr && index >= 0 && index < directory->subdirectories.size())
+			directory = &(directory->subdirectories[index]);
+		else
+			return nullptr;
+	}
+
+	return directory;
+}
+
+// Merge vector 'b's elements into vector 'a' using the current sort method (based on merge sort algorithm)
+void ImageViewer::MergeVectors(std::vector<ImageViewer::File> &a, const std::vector<ImageViewer::File> &b)
+{
+	if (b.empty())
+		return;
+
+	// Reserve enough space for the final vector so that it won't be reallocated and invalidate the iterator
+	a.reserve(a.size() + b.size());
+
+	std::vector<ImageViewer::File>::iterator iterator = a.begin();
+	int i = 0;
+	while (iterator < a.end() && i < b.size())
+	{
+		// If the next element in vector 'b' is smaller according to the current sort method, insert it in the next spot in vector 'a'
+		if ((sortMethod == ID_SORT_NAME && iterator->name.compare(b[i].name) > 0) ||
+		    (sortMethod == ID_SORT_DATE && iterator->modifiedTime > b[i].modifiedTime) ||
+			(sortMethod == ID_SORT_RANDOM && std::rand() % 2 == 1))
+		{
+			a.insert(iterator, b[i]);
+			i++;
+		}
+
+		// Move to the next element in vector 'a' (either because it was smaller or because the new element from vector 'b' needs to be skipped)
+		iterator++;
+	}
+
+	// If the end of vector 'a' has been reached but there are still elements in 'b', add them all to the end of 'a'
+	while (i < b.size())
+	{
+		a.push_back(b[i]);
+		i++;
+	}
+}
+
+bool ImageViewer::IsValidExtension(std::string extension)
+{
+	// Convert the extension to all lowercase characters
+	for (int i = 0; i < extension.size(); i++)
+		extension[i] = tolower(extension[i]);
+
+	// Compare the file's lowercase extension against the active extensions
+	for (auto type : fileTypes)
+	{
+		if (type.active && extension.compare(type.name) == 0)
+			return true;
+	}
+
+	return false;
+}
+
+void ImageViewer::AddImage(const std::filesystem::directory_entry &file, std::vector<File> &vector, const std::unordered_map<std::string, int> &filterItems, const bool defaultValidity)
+{
+	std::string name = file.path().filename().string();
+	std::string nameStandardized = StaticUtilities::StandardizeImageName(name);
+	std::string path = file.path().string().substr(0, file.path().string().length() - name.length());
+
+	// If there is a filter, check whether this image is in the filter and flip its accept state if it's present.
+	// Standardize image name before comparing with filter so names like "image.jpg" and "image copy 2.jpg" will evaluate to equal
+	bool valid = defaultValidity;
+	if (filterItems.find(nameStandardized) != filterItems.end())
+		valid = !valid;
+
+	if (valid)
+	{
+		// Struct documentation: https://man7.org/linux/man-pages/man0/sys_stat.h.0p.html
+		struct stat info;
+		time_t time;
+		// Function documentation: https://pubs.opengroup.org/onlinepubs/007908799/xsh/stat.html
+		if (stat(file.path().c_str(), &info) == 0)
+		{
+			time = info.st_mtime;
+		}
+		else
+		{
+			std::cout << "GetImages(): Unable to obtain time for \"" << path << "\"" << std::endl;
+			time = 0;
+		}
+
+		File image = { nameStandardized, name, path, time };
+		if (sortMethod == ID_SORT_NAME)
+			SortAlphabetically(vector, image);
+		else if (sortMethod == ID_SORT_DATE)
+			SortByTime(vector, image);
+		else if (sortMethod == ID_SORT_RANDOM)
+			SortRandomly(vector, image);
+		else
+		{
+			std::cout << "GetImages(): Unknown sorting method" << std::endl;
+			vector.push_back(image);
+		}
+	}
 }
 
 // Don't catch wxID_NEW because the event will rise to TotalPhoto.cpp

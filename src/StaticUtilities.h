@@ -10,6 +10,7 @@
 class StaticUtilities
 {
 public:
+	static int GetUniqueId();
 	static std::string GetDirectory(wxFrame *parent, std::string message);
 	static std::string StandardizeImageName(std::string name);
 };

@@ -165,6 +165,9 @@ ImageViewer::ImageViewer(wxWindow *parent, wxWindowID id, const wxString &title,
 void ImageViewer::OnRefresh(wxCommandEvent &event)
 {
 	GetImages();
+
+	// Also reset focus on the splitter in case it has been given to a child panel, which will lose key presses
+	splitter->SetFocusIgnoringChildren();
 }
 
 void ImageViewer::OnToggleName(wxCommandEvent &event)
@@ -202,6 +205,9 @@ void ImageViewer::OnSortChanged(wxCommandEvent &event)
 	// Update the sorting method and recollect the images
 	sortMethod = event.GetId();
 	GetImages();
+
+	// Also reset focus on the splitter in case it has been given to a child panel, which will lose key presses
+	splitter->SetFocusIgnoringChildren();
 }
 
 void ImageViewer::OnDirectoryToggled(wxCommandEvent &event)
@@ -211,10 +217,14 @@ void ImageViewer::OnDirectoryToggled(wxCommandEvent &event)
 	std::string userData = tokenizer->GetString().ToStdString();
 	ImageViewer::Directory *directory = FindDirectory(userData);
 
-	directory->active = !directory->active;
-
-	// Recursively set all of this directory's subdirectories to match its activation state
-	RecurseActivationState(directory->subdirectories, directory->active);
+	if (directory != nullptr)
+	{
+		// Toggle its activation state and recursively set its subdirectories to match
+		directory->active = !directory->active;
+		RecurseActivationState(directory->subdirectories, directory->active);
+	}
+	else
+		std::cout << "OnDirectoryToggled(): Unable to find directory" << std::endl;
 }
 
 void ImageViewer::OnDirectoryExpanded(wxCommandEvent &event)
@@ -224,27 +234,32 @@ void ImageViewer::OnDirectoryExpanded(wxCommandEvent &event)
 	std::string userData = tokenizer->GetString().ToStdString();
 	ImageViewer::Directory *subdirectory = FindDirectory(userData);
 
-	// If this is the first time expanding this directory, create its list of subdirectories in its sizer
-	if (!subdirectory->expanded && subdirectory->subdirectories.empty())
+	if (subdirectory != nullptr)
 	{
-		subdirectory->subdirectories = GetSubdirectories(subdirectory);
-		AddSubdirectories(subdirectory->subdirectorySizer, subdirectory->subdirectories);
+		// If this is the first time expanding this directory, create its list of subdirectories in its sizer
+		if (!subdirectory->expanded && subdirectory->subdirectories.empty())
+		{
+			subdirectory->subdirectories = GetSubdirectories(subdirectory);
+			AddSubdirectories(subdirectory->subdirectorySizer, subdirectory->subdirectories);
+		}
+		// Otherwise, simply hide or show the elements in its sizer
+		else
+			subdirectory->subdirectorySizer->ShowItems(!subdirectory->expanded);
+
+		// Update the relevant GUI containers
+		subdirectory->subdirectorySizer->Layout(); // puts subdirectories in correct place
+		directoryPanel->Layout(); // moves surrounding directories to new correct place
+		controlPanel->Layout(); // gives panel scrollbar if necessary
+
+		// Toggle this directory's expanded state
+		subdirectory->expanded = !subdirectory->expanded;
+
+		// And finally toggle the expand button's image icon to match
+		std::string imageName = (subdirectory->expanded) ? "assets/collapse.png" : "assets/expand.png";
+		subdirectory->expandButton->SetBitmap(wxBitmap(applicationDirectory + imageName, wxBITMAP_TYPE_PNG));
 	}
-	// Otherwise, simply hide or show the elements in its sizer
 	else
-		subdirectory->subdirectorySizer->ShowItems(!subdirectory->expanded);
-
-	// Update the relevant GUI containers
-	subdirectory->subdirectorySizer->Layout(); // puts subdirectories in correct place
-	directoryPanel->Layout(); // moves surrounding directories to new correct place
-	controlPanel->Layout(); // gives panel scrollbar if necessary
-
-	// Toggle this directory's expanded state
-	subdirectory->expanded = !subdirectory->expanded;
-
-	// And finally toggle the expand button's image icon to match
-	std::string imageName = (subdirectory->expanded) ? "assets/collapse.png" : "assets/expand.png";
-	subdirectory->expandButton->SetBitmap(wxBitmap(applicationDirectory + imageName, wxBITMAP_TYPE_PNG));
+		std::cout << "OnDirectoryExpanded(): Unable to find directory" << std::endl;
 }
 
 void ImageViewer::OnDirectoryOverflow(wxCommandEvent &event)
@@ -254,8 +269,13 @@ void ImageViewer::OnDirectoryOverflow(wxCommandEvent &event)
 	std::string userData = tokenizer->GetString().ToStdString();
 	ImageViewer::Directory *directory = FindDirectory(userData);
 
-	FilterEditor *filterEditor = new FilterEditor(this, wxID_ANY, "\"" + directory->name + "\" Filters", &(directory->filter), rootPath);
-	filterEditor->Show();
+	if (directory != nullptr)
+	{
+		FilterEditor *filterEditor = new FilterEditor(this, wxID_ANY, "\"" + directory->name + "\" Filters", &(directory->filter), rootPath);
+		filterEditor->Show();
+	}
+	else
+		std::cout << "OnDirectoryOverflow(): Unable to find directory" << std::endl;
 }
 
 void ImageViewer::OnFileTypeToggled(wxCommandEvent &event)
@@ -266,10 +286,6 @@ void ImageViewer::OnFileTypeToggled(wxCommandEvent &event)
 
 void ImageViewer::OnKeyPress(wxKeyEvent &event)
 {
-	//*******************************************************************************************************
-	// TO-DO: Sometimes this method won't be called because the control panel gets focus, needs to be fixed *
-	//*******************************************************************************************************
-
 	event.Skip();
 
 	if (files.size() > 0)
@@ -688,7 +704,7 @@ void ImageViewer::AddImage(const std::filesystem::directory_entry &file, std::ve
 		}
 		else
 		{
-			std::cout << "GetImages(): Unable to obtain time for \"" << path << "\"" << std::endl;
+			std::cout << "AddImage(): Unable to obtain time for \"" << path << "\"" << std::endl;
 			time = 0;
 		}
 
@@ -701,7 +717,7 @@ void ImageViewer::AddImage(const std::filesystem::directory_entry &file, std::ve
 			SortRandomly(vector, image);
 		else
 		{
-			std::cout << "GetImages(): Unknown sorting method" << std::endl;
+			std::cout << "AddImage(): Unknown sorting method" << std::endl;
 			vector.push_back(image);
 		}
 	}

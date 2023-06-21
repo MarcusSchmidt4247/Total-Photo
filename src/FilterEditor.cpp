@@ -77,7 +77,7 @@ void FilterEditor::OnCancel(wxCommandEvent &event)
 
 void FilterEditor::OnChooseDir(wxCommandEvent &event)
 {
-	std::string dir = StaticUtilities::GetDirectory(this, "Choose a new source folder");
+	std::string dir = StaticUtilities::ChooseDirectory(this, "Choose a new source folder");
 	if (dir.compare("") != 0)
 	{
 		path = dir;

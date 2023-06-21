@@ -3,9 +3,11 @@
 
 #include "ImageViewer.h"
 #include "FilterEditor.h"
+#include "StaticUtilities.h"
 #include <wx/menu.h>
 #include <wx/panel.h>
 #include <wx/stattext.h>
+#include <wx/checkbox.h>
 #include <wx/image.h>
 #include <wx/bitmap.h>
 #include <wx/stdpaths.h>
@@ -31,9 +33,9 @@ ImageViewer::ImageViewer(wxWindow *parent, wxWindowID id, const wxString &title,
 
 	// Sub-menu with radio options to choose one sorting method
 	wxMenu *sortMenu = new wxMenu();
-	sortMenu->Append(ID_SORT_NAME, "Name", wxEmptyString, wxITEM_RADIO);
-	sortMenu->Append(ID_SORT_DATE, "Date Modified", wxEmptyString, wxITEM_RADIO);
-	sortMenu->Append(ID_SORT_RANDOM, "Random", wxEmptyString, wxITEM_RADIO);
+	sortMenu->Append(static_cast<int>(SortMethod::NAME), "Name", wxEmptyString, wxITEM_RADIO);
+	sortMenu->Append(static_cast<int>(SortMethod::DATE), "Date Modified", wxEmptyString, wxITEM_RADIO);
+	sortMenu->Append(static_cast<int>(SortMethod::RANDOM), "Random", wxEmptyString, wxITEM_RADIO);
 
 	wxMenu *controlsMenu = new wxMenu();
 	controlsMenu->Append(wxID_NEW, "Open Another Viewer");
@@ -203,7 +205,7 @@ void ImageViewer::OnToggleBackground(wxCommandEvent &event)
 void ImageViewer::OnSortChanged(wxCommandEvent &event)
 {
 	// Update the sorting method and recollect the images
-	sortMethod = event.GetId();
+	sortMethod = static_cast<SortMethod>(event.GetId());
 	GetImages();
 
 	// Also reset focus on the splitter in case it has been given to a child panel, which will lose key presses
@@ -215,7 +217,7 @@ void ImageViewer::OnDirectoryToggled(wxCommandEvent &event)
 	// Find the directory
 	wxStringTokenizer *tokenizer = (wxStringTokenizer *) event.GetEventUserData();
 	std::string userData = tokenizer->GetString().ToStdString();
-	ImageViewer::Directory *directory = FindDirectory(userData);
+	Directory *directory = FindDirectory(userData);
 
 	if (directory != nullptr)
 	{
@@ -232,7 +234,7 @@ void ImageViewer::OnDirectoryExpanded(wxCommandEvent &event)
 	// Find the directory
 	wxStringTokenizer *tokenizer = (wxStringTokenizer *) event.GetEventUserData();
 	std::string userData = tokenizer->GetString().ToStdString();
-	ImageViewer::Directory *subdirectory = FindDirectory(userData);
+	Directory *subdirectory = FindDirectory(userData);
 
 	if (subdirectory != nullptr)
 	{
@@ -267,7 +269,7 @@ void ImageViewer::OnDirectoryOverflow(wxCommandEvent &event)
 	// Find the directory
 	wxStringTokenizer *tokenizer = (wxStringTokenizer *) event.GetEventUserData();
 	std::string userData = tokenizer->GetString().ToStdString();
-	ImageViewer::Directory *directory = FindDirectory(userData);
+	Directory *directory = FindDirectory(userData);
 
 	if (directory != nullptr)
 	{
@@ -314,7 +316,7 @@ void ImageViewer::OnKeyPress(wxKeyEvent &event)
 		std::cout << "OnKeyPress(): No files" << std::endl;
 }
 
-std::vector<ImageViewer::Directory> ImageViewer::GetSubdirectories(Directory *directory)
+std::vector<Directory> ImageViewer::GetSubdirectories(Directory *directory)
 {
 	// Construct a filepath to the provided directory by moving up the chain of parents to the root filepath
 	std::string path = "";
@@ -333,13 +335,13 @@ std::vector<ImageViewer::Directory> ImageViewer::GetSubdirectories(Directory *di
 	 * References:
 	 * https://stackoverflow.com/questions/612097
 	 * https://en.cppreference.com/w/cpp/filesystem */
-	std::vector<ImageViewer::Directory> subdirectories;
+	std::vector<Directory> subdirectories;
 	for (const auto &entry : std::filesystem::directory_iterator(path))
 	{
 		if (entry.is_directory())
 		{
-			ImageViewer::Directory subdirectory = { { entry.path().filename().string(), active }, directory, filter };
-			SortAlphabetically(subdirectories, subdirectory);
+			Directory subdirectory = { { entry.path().filename().string(), active }, directory, filter };
+			StaticUtilities::SortAlphabetically(subdirectories, subdirectory);
 		}
 	}
 
@@ -353,8 +355,9 @@ void ImageViewer::GetImages()
 	// For every directory...
 	for (Directory directory : directories)
 	{
-		std::vector<ImageViewer::File> newFiles = RecurseGetImages(rootPath, &directory);
-		MergeVectors(files, newFiles);
+		// Recursively obtain the directory's images and merge them with the main list
+		std::vector<File> newFiles = StaticUtilities::RecurseGetImages(rootPath, sortMethod, fileTypes, &directory);
+		StaticUtilities::MergeVectors(files, newFiles, sortMethod);
 	}
 
 	if (files.size() > 0)
@@ -362,78 +365,6 @@ void ImageViewer::GetImages()
 		imageIndex = 0;
 		LoadFile(imageIndex);
 	}
-}
-
-std::vector<ImageViewer::File> ImageViewer::RecurseGetImages(std::filesystem::path path, Directory *directory)
-{
-	std::vector<ImageViewer::File> images;
-
-	// Confirm the provided directory still exists in its expected location
-	if (std::filesystem::is_directory((std::filesystem::path) (path.string() + "/" + directory->name)))
-	{
-		// Gather information about the filter on this directory that will be passed along
-		//*************************************************************************************************
-		// NOTE: This work is unused in one of the logical paths but avoids repeating code. Improve this. *
-		//*************************************************************************************************
-		std::unordered_map<std::string, int> filterItems;
-		bool defaultValidity = true;
-		if (directory->filter != nullptr && directory->filter->GetType() != Filter::NONE)
-		{
-			filterItems = directory->filter->GetFilterItems();
-			if (directory->filter->GetType() == Filter::INCLUDE)
-				defaultValidity = false;
-		}
-
-		// If it has nested subdirectories in the code
-		if (!directory->subdirectories.empty())
-		{
-			// Recurse to get their images
-			for (auto subdirectory : directory->subdirectories)
-			{
-				std::vector<ImageViewer::File> recursedImages = RecurseGetImages(path.string() + "/" + directory->name, &subdirectory);
-				MergeVectors(images, recursedImages);
-			}
-
-			// And then get the images from this directory if it's active
-			if (directory->active)
-			{
-				for (const auto &entry : std::filesystem::directory_iterator(path))
-				{
-					if (entry.is_regular_file() && IsValidExtension(entry.path().extension().string()))
-						AddImage(entry, images, filterItems, defaultValidity);
-				}
-			}
-		}
-		// If it does not have nested subdirectories in the code but it is activated
-		else if (directory->active)
-		{
-			// And then recurse with a different method
-			std::vector<ImageViewer::File> recursedImages = RecurseGetImages(path.string() + "/" + directory->name, filterItems, defaultValidity);
-			MergeVectors(images, recursedImages);
-		}
-	}
-	else
-		std::cout << "RecurseGetImages(): Directory \"" << (path.string() + "/" + directory->name) << "\" does not exist" << std::endl;
-	
-	return images;
-}
-
-std::vector<ImageViewer::File> ImageViewer::RecurseGetImages(std::filesystem::path path, const std::unordered_map<std::string, int> &filterItems, const bool defaultValidity)
-{
-	std::vector<ImageViewer::File> images;
-
-	for (const auto &entry : std::filesystem::directory_iterator(path))
-	{
-		if (entry.is_directory())
-		{
-			std::vector<ImageViewer::File> recursedImages = RecurseGetImages(entry.path(), filterItems, defaultValidity);
-			MergeVectors(images, recursedImages);
-		}
-		else if (entry.is_regular_file() && IsValidExtension(entry.path().extension().string()))
-			AddImage(entry, images, filterItems, defaultValidity);
-	}
-	
-	return images;
 }
 
 // Calculates a unique ID for an item in a list (e.g. the list of directories a user chooses from) based on its index
@@ -454,7 +385,7 @@ int ImageViewer::GetIndex(ImageViewer::ListType type, int id)
 	return id - wxID_HIGHEST - 100 - (100 * static_cast<int>(type));
 }
 
-void ImageViewer::PrintActive(std::vector<ImageViewer::ToggledString> vector, std::string name)
+void ImageViewer::PrintActive(std::vector<ToggledString> vector, std::string name)
 {
 	std::cout << "\"" << name << "\" active elements:" << std::endl;
 	for (auto &element : vector)
@@ -467,56 +398,11 @@ void ImageViewer::PrintActive(std::vector<ImageViewer::ToggledString> vector, st
 	std::cout << std::endl;
 }
 
-void ImageViewer::PrintFile(ImageViewer::File file)
+void ImageViewer::PrintFile(File file)
 {
 	std::cout << "\"" << file.originalName << "\" file:" << std::endl;
 	std::cout << "-- Path: " << file.path << std::endl;
 	std::cout << "-- Modified: " << asctime(localtime(&file.modifiedTime)) << std::endl << std::endl;
-}
-
-template <typename T>
-void ImageViewer::SortAlphabetically(std::vector<T> &vector, T element)
-{
-	typename std::vector<T>::iterator it;
-	for (it = vector.begin(); it < vector.end(); it++)
-	{
-		// If the current element in the list is alphabetically greater, break so the new element is inserted here
-		if ((*it).name.compare(element.name) > 0)
-			break;
-	}
-
-	vector.insert(it, element);
-}
-
-template <typename T>
-void ImageViewer::SortRandomly(std::vector<T> &vector, T element)
-{
-	if (vector.size() > 0)
-	{
-		typename std::vector<T>::iterator it = vector.begin();
-
-		// Reference: https://en.cppreference.com/w/cpp/numeric/random/rand
-		std::srand(std::time(nullptr));
-		int index = std::rand() % vector.size();
-
-		std::advance(it, index);
-		vector.insert(it, element);
-	}
-	else
-		vector.push_back(element);
-}
-
-void ImageViewer::SortByTime(std::vector<File> &vector, File element)
-{
-	std::vector<File>::iterator it;
-	for (it = vector.begin(); it < vector.end(); it++)
-	{
-		// If the current element in the list was modified later, break so the new element is inserted here
-		if ((*it).modifiedTime > element.modifiedTime)
-			break;
-	}
-
-	vector.insert(it, element);
 }
 
 void ImageViewer::LoadFile(int index)
@@ -546,9 +432,9 @@ void ImageViewer::LoadFile(int index)
 		std::cout << "LoadFile(): Failed to load file \"" << path << "\"" << std::endl;
 }
 
-void ImageViewer::RecurseActivationState(std::vector<ImageViewer::Directory> &subdirectories, bool active)
+void ImageViewer::RecurseActivationState(std::vector<Directory> &subdirectories, bool active)
 {
-	for (ImageViewer::Directory &directory : subdirectories)
+	for (Directory &directory : subdirectories)
 	{
 		directory.active = active;
 		directory.activeCheckbox->SetValue(active);
@@ -557,7 +443,7 @@ void ImageViewer::RecurseActivationState(std::vector<ImageViewer::Directory> &su
 	}
 }
 
-void ImageViewer::AddSubdirectories(wxBoxSizer *sizer, std::vector<ImageViewer::Directory> &subdirectories)
+void ImageViewer::AddSubdirectories(wxBoxSizer *sizer, std::vector<Directory> &subdirectories)
 {
 	if (sizer == nullptr)
 		std::cout << "AddSubdirectories(): sizer is null" << std::endl;
@@ -611,10 +497,10 @@ void ImageViewer::AddSubdirectories(wxBoxSizer *sizer, std::vector<ImageViewer::
 
 // Navigate the nested lists of directories according to the given path (a string formatted so that subsequent indices to move into are separated by colons).
 // Return a null pointer if the path is invalid
-ImageViewer::Directory * ImageViewer::FindDirectory(std::string path)
+Directory * ImageViewer::FindDirectory(std::string path)
 {
 	wxStringTokenizer localTokenizer(path, ":");
-	ImageViewer::Directory *directory = nullptr;
+	Directory *directory = nullptr;
 	while (localTokenizer.HasMoreTokens())
 	{
 		int index = std::stoi(localTokenizer.GetNextToken().ToStdString());
@@ -630,99 +516,6 @@ ImageViewer::Directory * ImageViewer::FindDirectory(std::string path)
 	return directory;
 }
 
-// Merge vector 'b's elements into vector 'a' using the current sort method (based on merge sort algorithm)
-void ImageViewer::MergeVectors(std::vector<ImageViewer::File> &a, const std::vector<ImageViewer::File> &b)
-{
-	if (b.empty())
-		return;
-
-	// Reserve enough space for the final vector so that it won't be reallocated and invalidate the iterator
-	a.reserve(a.size() + b.size());
-
-	std::vector<ImageViewer::File>::iterator iterator = a.begin();
-	int i = 0;
-	while (iterator < a.end() && i < b.size())
-	{
-		// If the next element in vector 'b' is smaller according to the current sort method, insert it in the next spot in vector 'a'
-		if ((sortMethod == ID_SORT_NAME && iterator->name.compare(b[i].name) > 0) ||
-		    (sortMethod == ID_SORT_DATE && iterator->modifiedTime > b[i].modifiedTime) ||
-			(sortMethod == ID_SORT_RANDOM && std::rand() % 2 == 1))
-		{
-			a.insert(iterator, b[i]);
-			i++;
-		}
-
-		// Move to the next element in vector 'a' (either because it was smaller or because the new element from vector 'b' needs to be skipped)
-		iterator++;
-	}
-
-	// If the end of vector 'a' has been reached but there are still elements in 'b', add them all to the end of 'a'
-	while (i < b.size())
-	{
-		a.push_back(b[i]);
-		i++;
-	}
-}
-
-bool ImageViewer::IsValidExtension(std::string extension)
-{
-	// Convert the extension to all lowercase characters
-	for (int i = 0; i < extension.size(); i++)
-		extension[i] = tolower(extension[i]);
-
-	// Compare the file's lowercase extension against the active extensions
-	for (auto type : fileTypes)
-	{
-		if (type.active && extension.compare(type.name) == 0)
-			return true;
-	}
-
-	return false;
-}
-
-void ImageViewer::AddImage(const std::filesystem::directory_entry &file, std::vector<File> &vector, const std::unordered_map<std::string, int> &filterItems, const bool defaultValidity)
-{
-	std::string name = file.path().filename().string();
-	std::string nameStandardized = StaticUtilities::StandardizeImageName(name);
-	std::string path = file.path().string().substr(0, file.path().string().length() - name.length());
-
-	// If there is a filter, check whether this image is in the filter and flip its accept state if it's present.
-	// Standardize image name before comparing with filter so names like "image.jpg" and "image copy 2.jpg" will evaluate to equal
-	bool valid = defaultValidity;
-	if (filterItems.find(nameStandardized) != filterItems.end())
-		valid = !valid;
-
-	if (valid)
-	{
-		// Struct documentation: https://man7.org/linux/man-pages/man0/sys_stat.h.0p.html
-		struct stat info;
-		time_t time;
-		// Function documentation: https://pubs.opengroup.org/onlinepubs/007908799/xsh/stat.html
-		if (stat(file.path().c_str(), &info) == 0)
-		{
-			time = info.st_mtime;
-		}
-		else
-		{
-			std::cout << "AddImage(): Unable to obtain time for \"" << path << "\"" << std::endl;
-			time = 0;
-		}
-
-		File image = { nameStandardized, name, path, time };
-		if (sortMethod == ID_SORT_NAME)
-			SortAlphabetically(vector, image);
-		else if (sortMethod == ID_SORT_DATE)
-			SortByTime(vector, image);
-		else if (sortMethod == ID_SORT_RANDOM)
-			SortRandomly(vector, image);
-		else
-		{
-			std::cout << "AddImage(): Unknown sorting method" << std::endl;
-			vector.push_back(image);
-		}
-	}
-}
-
 // Don't catch wxID_NEW because the event will rise to TotalPhoto.cpp
 BEGIN_EVENT_TABLE(ImageViewer, wxFrame)
 EVT_MENU(wxID_REFRESH, ImageViewer::OnRefresh)
@@ -730,7 +523,7 @@ EVT_MENU(wxID_PRINT, ImageViewer::OnToggleName)
 EVT_MENU(wxID_FIRST, ImageViewer::OnFirstFile)
 EVT_MENU(wxID_SETUP, ImageViewer::OnToggleSplit)
 EVT_MENU(wxID_SELECT_COLOR, ImageViewer::OnToggleBackground)
-EVT_MENU(ID_SORT_NAME, ImageViewer::OnSortChanged)
-EVT_MENU(ID_SORT_DATE, ImageViewer::OnSortChanged)
-EVT_MENU(ID_SORT_RANDOM, ImageViewer::OnSortChanged)
+EVT_MENU(static_cast<int>(SortMethod::NAME), ImageViewer::OnSortChanged)
+EVT_MENU(static_cast<int>(SortMethod::DATE), ImageViewer::OnSortChanged)
+EVT_MENU(static_cast<int>(SortMethod::RANDOM), ImageViewer::OnSortChanged)
 END_EVENT_TABLE()

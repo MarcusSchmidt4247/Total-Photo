@@ -39,7 +39,7 @@ void TotalPhoto::OnNew(wxCommandEvent &event)
 // Try to create a new ImageViewer window and return whether or not it succeeded
 bool TotalPhoto::CreateNew()
 {
-	std::string dir = StaticUtilities::GetDirectory(root, "Choose root directory");
+	std::string dir = StaticUtilities::ChooseDirectory(root, "Choose root directory");
 	if (dir.compare("") != 0)
 	{
 		ImageViewer *frame = new ImageViewer(root, -1, "Image Viewer", dir);

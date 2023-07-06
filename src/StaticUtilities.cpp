@@ -43,17 +43,47 @@ std::vector<File> StaticUtilities::RecurseGetImages(std::filesystem::path path, 
 	// Confirm the provided directory still exists in its expected location
 	if (std::filesystem::is_directory((std::filesystem::path) (path.string() + "/" + directory->name)))
 	{
-		// Gather information about the filter on this directory that will be passed along
-		//*************************************************************************************************
-		// NOTE: This work is unused in one of the logical paths but avoids repeating code. Improve this. *
-		//*************************************************************************************************
+		// Gather information about the filter and which items it will (dis)allow for this directory so that it's ready to pass along
 		std::unordered_map<std::string, int> filterItems;
 		bool defaultValidity = true;
-		if (directory->filter != nullptr && directory->filter->GetType() != Filter::NONE)
+		if (directory->active && !directory->filters.empty())
 		{
-			filterItems = directory->filter->GetFilterItems();
-			if (directory->filter->GetType() == Filter::INCLUDE)
-				defaultValidity = false;
+			for (auto &filter : directory->filters)
+			{
+				// Combine all of the filter items for INCLUDE filters
+				if (filter->GetType() == Filter::INCLUDE)
+				{
+					defaultValidity = false;
+					std::unordered_map<std::string, int> newItems = filter->GetFilterItems();
+					filterItems.insert(newItems.begin(), newItems.end());
+				}
+			}
+
+			for (auto &filter : directory->filters)
+			{
+				if (filter->GetType() == Filter::EXCLUDE)
+				{
+					std::unordered_map<std::string, int> newItems = filter->GetFilterItems();
+
+					// If there are no INCLUDE items, combine all EXLUDE filter items
+					if (defaultValidity)
+						filterItems.insert(newItems.begin(), newItems.end());
+
+					// Otherwise, remove EXCLUDE filter items from the list of INCLUDE
+					else
+					{
+						int count = 0;
+						for (auto iterator = newItems.begin(); iterator != newItems.end();)
+						{
+							// Attempting to erasing from a key returns whether 0 or 1 items were erased
+							if (!filterItems.erase(iterator->first))
+								iterator++;
+							else
+								count++;
+						}
+					}
+				}
+			}
 		}
 
 		// If it has nested subdirectories in the code
@@ -170,60 +200,6 @@ void StaticUtilities::MergeVectors(std::vector<File> &a, const std::vector<File>
 	}
 }
 
-template <typename T>
-void StaticUtilities::SortAlphabetically(std::vector<T> &vector, T &element)
-{
-	typename std::vector<T>::iterator it;
-	for (it = vector.begin(); it < vector.end(); it++)
-	{
-		// If the current element in the list is alphabetically greater, break so the new element is inserted here
-		if ((*it).name.compare(element.name) > 0)
-			break;
-	}
-
-	vector.insert(it, element);
-}
-
-/* Defining a template function in the .cpp file means it won't be translatable by other classes that include the header file,
-   so it either needs to be defined in the header file or explicitly instantiated for all desired types in the .cpp file, as below.
- * Source: https://stackoverflow.com/a/488989 */
-template void StaticUtilities::SortAlphabetically(std::vector<Directory> &vector, Directory &element);
-
-//********************
-// Private functions *
-//********************
-
-template <typename T>
-void StaticUtilities::SortRandomly(std::vector<T> &vector, T &element)
-{
-	if (vector.size() > 0)
-	{
-		typename std::vector<T>::iterator it = vector.begin();
-
-		// Reference: https://en.cppreference.com/w/cpp/numeric/random/rand
-		std::srand(std::time(nullptr));
-		int index = std::rand() % vector.size();
-
-		std::advance(it, index);
-		vector.insert(it, element);
-	}
-	else
-		vector.push_back(element);
-}
-
-void StaticUtilities::SortByTime(std::vector<File> &vector, File &element)
-{
-	std::vector<File>::iterator it;
-	for (it = vector.begin(); it < vector.end(); it++)
-	{
-		// If the current element in the list was modified later, break so the new element is inserted here
-		if ((*it).modifiedTime > element.modifiedTime)
-			break;
-	}
-
-	vector.insert(it, element);
-}
-
 void StaticUtilities::ProcessImage(const std::filesystem::directory_entry &file, std::vector<File> &vector, SortMethod sortMethod, const std::unordered_map<std::string, int> &filterItems, const bool defaultValidity)
 {
 	std::string name = file.path().filename().string();
@@ -281,4 +257,58 @@ bool StaticUtilities::IsValidExtension(const std::vector<ToggledString> &fileTyp
 	}
 
 	return false;
+}
+
+template <typename T>
+void StaticUtilities::SortAlphabetically(std::vector<T> &vector, T &element)
+{
+	typename std::vector<T>::iterator it;
+	for (it = vector.begin(); it < vector.end(); it++)
+	{
+		// If the current element in the list is alphabetically greater, break so the new element is inserted here
+		if ((*it).name.compare(element.name) > 0)
+			break;
+	}
+
+	vector.insert(it, element);
+}
+
+/* Defining a template function in the .cpp file means it won't be translatable by other classes that include the header file,
+   so it either needs to be defined in the header file or explicitly instantiated for all desired types in the .cpp file, as below.
+ * Source: https://stackoverflow.com/a/488989 */
+template void StaticUtilities::SortAlphabetically(std::vector<Directory> &vector, Directory &element);
+
+//********************
+// Private functions *
+//********************
+
+template <typename T>
+void StaticUtilities::SortRandomly(std::vector<T> &vector, T &element)
+{
+	if (vector.size() > 0)
+	{
+		typename std::vector<T>::iterator it = vector.begin();
+
+		// Reference: https://en.cppreference.com/w/cpp/numeric/random/rand
+		std::srand(std::time(nullptr));
+		int index = std::rand() % vector.size();
+
+		std::advance(it, index);
+		vector.insert(it, element);
+	}
+	else
+		vector.push_back(element);
+}
+
+void StaticUtilities::SortByTime(std::vector<File> &vector, File &element)
+{
+	std::vector<File>::iterator it;
+	for (it = vector.begin(); it < vector.end(); it++)
+	{
+		// If the current element in the list was modified later, break so the new element is inserted here
+		if ((*it).modifiedTime > element.modifiedTime)
+			break;
+	}
+
+	vector.insert(it, element);
 }

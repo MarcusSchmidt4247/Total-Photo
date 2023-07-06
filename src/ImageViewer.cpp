@@ -273,7 +273,7 @@ void ImageViewer::OnDirectoryOverflow(wxCommandEvent &event)
 
 	if (directory != nullptr)
 	{
-		FilterEditor *filterEditor = new FilterEditor(this, wxID_ANY, "\"" + directory->name + "\" Filters", &(directory->filter), rootPath);
+		FilterEditor *filterEditor = new FilterEditor(this, wxID_ANY, "\"" + directory->name + "\" Filters", &(directory->filters), rootPath);
 		filterEditor->Show();
 	}
 	else
@@ -328,7 +328,6 @@ std::vector<Directory> ImageViewer::GetSubdirectories(Directory *directory)
 	}
 	path.insert(0, rootPath.string());
 
-	Filter *filter = (directory == nullptr || directory->filter == nullptr) ? nullptr : directory->filter->GetCopy();
 	bool active = (directory == nullptr) ? false : directory->active;
 
 	/* Alphabetically sort each discovered directory into a list of subdirectories.
@@ -340,7 +339,12 @@ std::vector<Directory> ImageViewer::GetSubdirectories(Directory *directory)
 	{
 		if (entry.is_directory())
 		{
-			Directory subdirectory = { { entry.path().filename().string(), active }, directory, filter };
+			Directory subdirectory = { { entry.path().filename().string(), active }, directory };
+			if (directory != nullptr)
+			{
+				for (const auto &filter : directory->filters)
+					subdirectory.filters.push_back(filter->GetCopy());
+			}
 			StaticUtilities::SortAlphabetically(subdirectories, subdirectory);
 		}
 	}
@@ -358,6 +362,14 @@ void ImageViewer::GetImages()
 		// Recursively obtain the directory's images and merge them with the main list
 		std::vector<File> newFiles = StaticUtilities::RecurseGetImages(rootPath, sortMethod, fileTypes, &directory);
 		StaticUtilities::MergeVectors(files, newFiles, sortMethod);
+	}
+
+	// And then retrieve the valid images in the root directory
+	std::unordered_map<std::string, int> filterItems;
+	for (const auto &entry : std::filesystem::directory_iterator(rootPath))
+	{
+		if (entry.is_regular_file() && StaticUtilities::IsValidExtension(fileTypes, entry.path().extension().string()))
+			StaticUtilities::ProcessImage(entry, files, sortMethod, filterItems, true);
 	}
 
 	if (files.size() > 0)

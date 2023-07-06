@@ -26,15 +26,14 @@ public:
 	static int GetUniqueId();
 	static std::string StandardizeImageName(std::string name);
 	static void MergeVectors(std::vector<File> &a, const std::vector<File> &b, const SortMethod sortMethod);
+	static void ProcessImage(const std::filesystem::directory_entry &file, std::vector<File> &vector, SortMethod sortMethod, const std::unordered_map<std::string, int> &filterItems, const bool defaultValidity);
+	static bool IsValidExtension(const std::vector<ToggledString> &fileTypes, std::string extension);
 
 	template <typename T> static void SortAlphabetically(std::vector<T> &vector, T &element);
 
 private:
 	template <typename T> static void SortRandomly(std::vector<T> &vector, T &element);
 	static void SortByTime(std::vector<File> &vector, File &element);
-
-	static void ProcessImage(const std::filesystem::directory_entry &file, std::vector<File> &vector, SortMethod sortMethod, const std::unordered_map<std::string, int> &filterItems, const bool defaultValidity);
-	static bool IsValidExtension(const std::vector<ToggledString> &fileTypes, std::string extension);
 };
 
 #endif

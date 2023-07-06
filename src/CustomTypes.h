@@ -21,10 +21,10 @@ struct ToggledString
 struct Directory : ToggledString
 {
 	Directory *parent = nullptr;
-	Filter *filter = nullptr;
 	wxBoxSizer *subdirectorySizer = nullptr;
 	wxCheckBox *activeCheckbox = nullptr;
 	wxButton *expandButton = nullptr;
+	std::vector<Filter *> filters;
 	std::vector<Directory> subdirectories;
 	std::string indicesPath;
 	bool expanded = false;

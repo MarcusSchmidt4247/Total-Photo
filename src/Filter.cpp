@@ -3,6 +3,7 @@
 
 #include "Filter.h"
 #include "StaticUtilities.h"
+#include <iostream>
 
 Filter::Filter()
 {

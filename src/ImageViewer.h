@@ -6,17 +6,18 @@
 
 #include "Filter.h"
 #include "CustomTypes.h"
+#include <string>
+#include <vector>
+#include <filesystem>
 #include <wx/frame.h>
 #include <wx/event.h>
-#include <string>
-#include <filesystem>
-#include <vector>
 #include <wx/statbmp.h>
 #include <wx/sizer.h>
 #include <wx/button.h>
 #include <wx/splitter.h>
 #include <wx/scrolwin.h>
 #include <wx/colour.h>
+#include <wx/mediactrl.h>
 
 class ImageViewer : public wxFrame
 {
@@ -63,7 +64,7 @@ private:
 
 	// Vector variables
 	std::vector<Directory> directories;
-	std::vector<ToggledString> fileTypes;
+	std::vector<FileType> fileTypes;
 	std::vector<File> files;
 
 	// GUI element variables
@@ -72,6 +73,7 @@ private:
 	wxPanel *imagePanel;
 	wxScrolledWindow *directoryPanel;
 	wxStaticBitmap *imageBitmap;
+	wxMediaCtrl *mediaCtrl;
 	wxBoxSizer *imageSizer;
 	wxBoxSizer *topSizer;
 

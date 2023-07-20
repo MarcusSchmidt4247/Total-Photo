@@ -100,11 +100,12 @@ ImageViewer::ImageViewer(wxWindow *parent, wxWindowID id, const wxString &title,
 	//**********************************
 
 	// This should be reworked to be more customizable and programatic
-	ToggledString types[4];
-	types[0] = { ".png", true };
-	types[1] = { ".jpg", true };
-	types[2] = { ".jpeg", true };
-	types[3] = { ".mp4", false };
+	FileType types[5];
+	types[0] = { { ".png", true }, MediaType::IMAGE };
+	types[1] = { { ".jpg", true }, MediaType::IMAGE };
+	types[2] = { { ".jpeg", true }, MediaType::IMAGE };
+	types[3] = { { ".mp4", true }, MediaType::VIDEO };
+	types[4] = { { ".mov", true }, MediaType::VIDEO };
 
 	wxPanel *typesPanel = new wxPanel(controlPanel, wxID_ANY, wxDefaultPosition, wxDefaultSize,
 									  wxTAB_TRAVERSAL | wxBORDER_SIMPLE);
@@ -140,6 +141,10 @@ ImageViewer::ImageViewer(wxWindow *parent, wxWindowID id, const wxString &title,
 	imageBitmap = new wxStaticBitmap(imagePanel, wxID_ANY, wxBitmap(1,1));
 	imageBitmap->SetScaleMode(wxStaticBitmap::Scale_AspectFit);
 	imageSizer->Add(imageBitmap, wxSizerFlags(1).Expand());
+	mediaCtrl = new wxMediaCtrl(imagePanel, wxID_ANY);
+	mediaCtrl->ShowPlayerControls();
+	mediaCtrl->Hide();
+	imageSizer->Add(mediaCtrl, wxSizerFlags(1).Expand());
 	imageSizer->SetMinSize(700, 500);
 	imagePanel->SetSizer(imageSizer);
 
@@ -368,8 +373,8 @@ void ImageViewer::GetImages()
 	std::unordered_map<std::string, int> filterItems;
 	for (const auto &entry : std::filesystem::directory_iterator(rootPath))
 	{
-		if (entry.is_regular_file() && StaticUtilities::IsValidExtension(fileTypes, entry.path().extension().string()))
-			StaticUtilities::ProcessImage(entry, files, sortMethod, filterItems, true);
+		if (entry.is_regular_file() && StaticUtilities::IsActiveExtension(fileTypes, entry.path().extension().string()))
+			StaticUtilities::ProcessImage(entry, files, sortMethod, fileTypes, filterItems, true);
 	}
 
 	if (files.size() > 0)
@@ -425,23 +430,51 @@ void ImageViewer::LoadFile(int index)
 		return;
 	}
 
-	static wxImage image;
 	std::string path = files[index].path + files[index].originalName;
-	if (image.LoadFile(path))
+	if (files[index].type == MediaType::IMAGE)
 	{
-		// Update the name of the window with the image name if enabled
-		std::string name = "Image Viewer";
-		if (showImageName)
-			name += " - " + files[index].originalName;
-		this->SetLabel(name);
+		static wxImage image;
+		if (image.LoadFile(path))
+		{
+			// If the media player is visible, toggle it and the image bitmap's visibility
+			if (mediaCtrl->IsShown())
+			{
+				mediaCtrl->Hide();
+				imageBitmap->Show();
+			}
 
-		// Update the image shown in the window
-		imageBitmap->SetBitmap(wxBitmap(image));
-		imageSizer->Layout();
-		image.Destroy();
+			// Update the displayed bitmap and resize it to fit the window
+			imageBitmap->SetBitmap(wxBitmap(image));
+			imageSizer->Layout();
+			image.Destroy();
+		}
+		else
+			std::cout << "LoadFile(): Failed to load image \"" << path << "\"" << std::endl;
+	}
+	else if (files[index].type == MediaType::VIDEO)
+	{
+		if (mediaCtrl->Load(path))
+		{
+			// If the image bitmap is visible, toggle it and the media player's visibility
+			if (imageBitmap->IsShown())
+			{
+				imageBitmap->Hide();
+				mediaCtrl->Show();
+			}
+
+			mediaCtrl->Play();
+		}
+		else
+			std::cout << "LoadFile(): Failed to load video \"" << path << "\"" << std::endl;
 	}
 	else
-		std::cout << "LoadFile(): Failed to load file \"" << path << "\"" << std::endl;
+		std::cout << "LoadFile(): Unrecognized media type for file \"" << path << "\"" << std::endl;
+
+	// Update the name of the window with the image name if enabled
+	std::string name = "Image Viewer";
+	if (showImageName)
+		name += " - " + files[index].originalName;
+	this->SetLabel(name);
 }
 
 void ImageViewer::RecurseActivationState(std::vector<Directory> &subdirectories, bool active)

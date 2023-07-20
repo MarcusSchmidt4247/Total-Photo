@@ -12,10 +12,13 @@
 #include <wx/button.h>
 #include <wx/checkbox.h>
 
+enum class SortMethod { NAME = wxID_HIGHEST + 1, DATE = wxID_HIGHEST + 2, RANDOM = wxID_HIGHEST + 3 };
+enum class MediaType { IMAGE, VIDEO, UNKNOWN };
+
 struct ToggledString
 {
 	std::string name;
-	bool active = false;
+	bool active;
 };
 
 struct Directory : ToggledString
@@ -30,14 +33,18 @@ struct Directory : ToggledString
 	bool expanded = false;
 };
 
+struct FileType : ToggledString
+{
+	MediaType type;
+};
+
 struct File
 {
 	std::string name;
 	std::string originalName;
 	std::string path;
 	time_t modifiedTime;
+	MediaType type;
 };
-
-enum class SortMethod { NAME = wxID_HIGHEST + 1, DATE = wxID_HIGHEST + 2, RANDOM = wxID_HIGHEST + 3 };
 
 #endif

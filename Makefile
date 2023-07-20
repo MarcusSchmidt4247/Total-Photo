@@ -4,7 +4,7 @@ CXXFLAGS = -Wall -std=c++17
 
 wxPath = ~/Library/wxWidgets-3.2.1/build-cocoa-debug
 wxComp = `$(wxPath)/wx-config --cxxflags`
-wxLink = `$(wxPath)/wx-config --libs`
+wxLink = `$(wxPath)/wx-config --libs std,media`
 
 obj_dir = obj
 obj_path := ./$(obj_dir)

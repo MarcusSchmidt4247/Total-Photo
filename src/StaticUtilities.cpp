@@ -36,7 +36,7 @@ std::vector<std::string> StaticUtilities::RecurseGetImages(std::filesystem::path
 	return images;
 }
 
-std::vector<File> StaticUtilities::RecurseGetImages(std::filesystem::path path, SortMethod sortMethod, const std::vector<ToggledString> &fileTypes, Directory *directory)
+std::vector<File> StaticUtilities::RecurseGetImages(std::filesystem::path path, SortMethod sortMethod, const std::vector<FileType> &fileTypes, Directory *directory)
 {
 	std::vector<File> images;
 
@@ -101,8 +101,8 @@ std::vector<File> StaticUtilities::RecurseGetImages(std::filesystem::path path, 
 			{
 				for (const auto &entry : std::filesystem::directory_iterator(path))
 				{
-					if (entry.is_regular_file() && IsValidExtension(fileTypes, entry.path().extension().string()))
-						ProcessImage(entry, images, sortMethod, filterItems, defaultValidity);
+					if (entry.is_regular_file() && IsActiveExtension(fileTypes, entry.path().extension().string()))
+						ProcessImage(entry, images, sortMethod, fileTypes, filterItems, defaultValidity);
 				}
 			}
 		}
@@ -120,7 +120,7 @@ std::vector<File> StaticUtilities::RecurseGetImages(std::filesystem::path path, 
 	return images;
 }
 
-std::vector<File> StaticUtilities::RecurseGetImages(std::filesystem::path path, SortMethod sortMethod, const std::vector<ToggledString> &fileTypes, const std::unordered_map<std::string, int> &filterItems, const bool defaultValidity)
+std::vector<File> StaticUtilities::RecurseGetImages(std::filesystem::path path, SortMethod sortMethod, const std::vector<FileType> &fileTypes, const std::unordered_map<std::string, int> &filterItems, const bool defaultValidity)
 {
 	std::vector<File> images;
 
@@ -131,8 +131,8 @@ std::vector<File> StaticUtilities::RecurseGetImages(std::filesystem::path path, 
 			std::vector<File> recursedImages = RecurseGetImages(entry.path(), sortMethod, fileTypes, filterItems, defaultValidity);
 			StaticUtilities::MergeVectors(images, recursedImages, sortMethod);
 		}
-		else if (entry.is_regular_file() && IsValidExtension(fileTypes, entry.path().extension().string()))
-			ProcessImage(entry, images, sortMethod, filterItems, defaultValidity);
+		else if (entry.is_regular_file() && IsActiveExtension(fileTypes, entry.path().extension().string()))
+			ProcessImage(entry, images, sortMethod, fileTypes, filterItems, defaultValidity);
 	}
 	
 	return images;
@@ -200,7 +200,7 @@ void StaticUtilities::MergeVectors(std::vector<File> &a, const std::vector<File>
 	}
 }
 
-void StaticUtilities::ProcessImage(const std::filesystem::directory_entry &file, std::vector<File> &vector, SortMethod sortMethod, const std::unordered_map<std::string, int> &filterItems, const bool defaultValidity)
+void StaticUtilities::ProcessImage(const std::filesystem::directory_entry &file, std::vector<File> &vector, SortMethod sortMethod, const std::vector<FileType> &fileTypes, const std::unordered_map<std::string, int> &filterItems, const bool defaultValidity)
 {
 	std::string name = file.path().filename().string();
 	std::string nameStandardized = StaticUtilities::StandardizeImageName(name);
@@ -228,7 +228,7 @@ void StaticUtilities::ProcessImage(const std::filesystem::directory_entry &file,
 			time = 0;
 		}
 
-		File image = { nameStandardized, name, path, time };
+		File image = { nameStandardized, name, path, time, GetMediaType(fileTypes, file.path().extension().string()) };
 		if (sortMethod == SortMethod::NAME)
 			SortAlphabetically(vector, image);
 		else if (sortMethod == SortMethod::DATE)
@@ -243,7 +243,7 @@ void StaticUtilities::ProcessImage(const std::filesystem::directory_entry &file,
 	}
 }
 
-bool StaticUtilities::IsValidExtension(const std::vector<ToggledString> &fileTypes, std::string extension)
+bool StaticUtilities::IsActiveExtension(const std::vector<FileType> &fileTypes, std::string extension)
 {
 	// Convert the extension to all lowercase characters
 	for (int i = 0; i < extension.size(); i++)
@@ -311,4 +311,20 @@ void StaticUtilities::SortByTime(std::vector<File> &vector, File &element)
 	}
 
 	vector.insert(it, element);
+}
+
+MediaType StaticUtilities::GetMediaType(const std::vector<FileType> &fileTypes, std::string extension)
+{
+	// Convert the extension to all lowercase characters
+	for (int i = 0; i < extension.size(); i++)
+		extension[i] = tolower(extension[i]);
+
+	// Compare the file's lowercase extension against the active extensions
+	for (auto fileType : fileTypes)
+	{
+		if (extension.compare(fileType.name) == 0)
+			return fileType.type;
+	}
+
+	return MediaType::UNKNOWN;
 }
